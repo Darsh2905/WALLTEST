@@ -39,6 +39,10 @@ CREATE TABLE canary_slot (
   FOREIGN KEY (treatment_id, campaign_id) REFERENCES treatment (treatment_id, campaign_id),
   -- no two slots of a campaign overlap in time
   CONSTRAINT canary_slot_no_overlap EXCLUDE USING gist (campaign_id WITH =, slot_period WITH &&),
+  -- + D-09: ONE audit clock per firm. trade_order carries no campaign id (the proposal's schema), so a slot's score is
+  -- the orders placed inside its time window; slots of DIFFERENT campaigns must therefore never overlap either, or one
+  -- campaign's orders would be scored in another's slots.
+  CONSTRAINT canary_slot_one_clock EXCLUDE USING gist (slot_period WITH &&),
   CHECK (NOT isempty(slot_period) AND NOT lower_inf(slot_period) AND NOT upper_inf(slot_period)
          AND lower_inc(slot_period) AND NOT upper_inc(slot_period))
 );
