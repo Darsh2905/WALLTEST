@@ -1,0 +1,314 @@
+{
+ "alpha": 0.05,
+ "trust": 0.9,
+ "planted_accuracy": 0.95,
+ "K": 24,
+ "target_joint_power": 0.8,
+ "reps": 20000,
+ "seed": 20261008,
+ "criterion": "smallest m with P(all truly-leaky cells flagged by Holm) >= target for m..m+8",
+ "chosen_m": 19,
+ "chosen_n_total": 152,
+ "default_joint_power": 0.8592,
+ "default_fwer": 0.0307,
+ "default_cell_power_bonferroni_exact": 0.9334536483768133,
+ "table": [
+  {
+   "m": 8,
+   "n_total": 64,
+   "cell_power_bonferroni_exact": 0.0,
+   "p_all_leaky_flagged": 0.0,
+   "p_leaky_all_on_flagged": 0.0,
+   "mean_leaky_cell_power": 0.0,
+   "fwer_false_alarm": 0.0
+  },
+  {
+   "m": 9,
+   "n_total": 72,
+   "cell_power_bonferroni_exact": 0.6302494097246091,
+   "p_all_leaky_flagged": 0.00765,
+   "p_leaky_all_on_flagged": 0.6322,
+   "mean_leaky_cell_power": 0.6313863636363637,
+   "fwer_false_alarm": 0.0245
+  },
+  {
+   "m": 10,
+   "n_total": 80,
+   "cell_power_bonferroni_exact": 0.5987369392383787,
+   "p_all_leaky_flagged": 0.00375,
+   "p_leaky_all_on_flagged": 0.5976,
+   "mean_leaky_cell_power": 0.5979590909090909,
+   "fwer_false_alarm": 0.0115
+  },
+  {
+   "m": 11,
+   "n_total": 88,
+   "cell_power_bonferroni_exact": 0.5688000922764597,
+   "p_all_leaky_flagged": 0.0018,
+   "p_leaky_all_on_flagged": 0.56745,
+   "mean_leaky_cell_power": 0.5681772727272727,
+   "fwer_false_alarm": 0.00705
+  },
+  {
+   "m": 12,
+   "n_total": 96,
+   "cell_power_bonferroni_exact": 0.5403600876626367,
+   "p_all_leaky_flagged": 0.0363,
+   "p_leaky_all_on_flagged": 0.5484,
+   "mean_leaky_cell_power": 0.5496863636363636,
+   "fwer_false_alarm": 0.0062
+  },
+  {
+   "m": 13,
+   "n_total": 104,
+   "cell_power_bonferroni_exact": 0.8645761402602191,
+   "p_all_leaky_flagged": 0.20115,
+   "p_leaky_all_on_flagged": 0.8653,
+   "mean_leaky_cell_power": 0.8640863636363636,
+   "fwer_false_alarm": 0.022
+  },
+  {
+   "m": 14,
+   "n_total": 112,
+   "cell_power_bonferroni_exact": 0.8470144374111832,
+   "p_all_leaky_flagged": 0.16355,
+   "p_leaky_all_on_flagged": 0.8448,
+   "mean_leaky_cell_power": 0.8468636363636364,
+   "fwer_false_alarm": 0.0127
+  },
+  {
+   "m": 15,
+   "n_total": 120,
+   "cell_power_bonferroni_exact": 0.8290474644964007,
+   "p_all_leaky_flagged": 0.12695,
+   "p_leaky_all_on_flagged": 0.83215,
+   "mean_leaky_cell_power": 0.8299909090909091,
+   "fwer_false_alarm": 0.01085
+  },
+  {
+   "m": 16,
+   "n_total": 128,
+   "cell_power_bonferroni_exact": 0.8107596527795682,
+   "p_all_leaky_flagged": 0.6216,
+   "p_leaky_all_on_flagged": 0.95745,
+   "mean_leaky_cell_power": 0.9577818181818182,
+   "fwer_false_alarm": 0.02725
+  },
+  {
+   "m": 17,
+   "n_total": 136,
+   "cell_power_bonferroni_exact": 0.9497470218274945,
+   "p_all_leaky_flagged": 0.5704,
+   "p_leaky_all_on_flagged": 0.95095,
+   "mean_leaky_cell_power": 0.9499681818181818,
+   "fwer_false_alarm": 0.01545
+  },
+  {
+   "m": 18,
+   "n_total": 144,
+   "cell_power_bonferroni_exact": 0.9418710709147784,
+   "p_all_leaky_flagged": 0.5182,
+   "p_leaky_all_on_flagged": 0.94335,
+   "mean_leaky_cell_power": 0.9420227272727273,
+   "fwer_false_alarm": 0.0298
+  },
+  {
+   "m": 19,
+   "n_total": 152,
+   "cell_power_bonferroni_exact": 0.9334536483768133,
+   "p_all_leaky_flagged": 0.8592,
+   "p_leaky_all_on_flagged": 0.98465,
+   "mean_leaky_cell_power": 0.9863909090909091,
+   "fwer_false_alarm": 0.0307
+  },
+  {
+   "m": 20,
+   "n_total": 160,
+   "cell_power_bonferroni_exact": 0.9840984739802366,
+   "p_all_leaky_flagged": 0.84005,
+   "p_leaky_all_on_flagged": 0.98545,
+   "mean_leaky_cell_power": 0.9844090909090909,
+   "fwer_false_alarm": 0.01685
+  },
+  {
+   "m": 21,
+   "n_total": 168,
+   "cell_power_bonferroni_exact": 0.9811193665918,
+   "p_all_leaky_flagged": 0.80695,
+   "p_leaky_all_on_flagged": 0.98115,
+   "mean_leaky_cell_power": 0.9807272727272728,
+   "fwer_false_alarm": 0.03775
+  },
+  {
+   "m": 22,
+   "n_total": 176,
+   "cell_power_bonferroni_exact": 0.977817522569616,
+   "p_all_leaky_flagged": 0.95565,
+   "p_leaky_all_on_flagged": 0.9954,
+   "mean_leaky_cell_power": 0.9958863636363636,
+   "fwer_false_alarm": 0.02695
+  },
+  {
+   "m": 23,
+   "n_total": 184,
+   "cell_power_bonferroni_exact": 0.9950696575855271,
+   "p_all_leaky_flagged": 0.94645,
+   "p_leaky_all_on_flagged": 0.99585,
+   "mean_leaky_cell_power": 0.9949954545454546,
+   "fwer_false_alarm": 0.01595
+  },
+  {
+   "m": 24,
+   "n_total": 192,
+   "cell_power_bonferroni_exact": 0.9940254494135115,
+   "p_all_leaky_flagged": 0.9889,
+   "p_leaky_all_on_flagged": 0.99855,
+   "mean_leaky_cell_power": 0.9989818181818182,
+   "fwer_false_alarm": 0.0436
+  },
+  {
+   "m": 25,
+   "n_total": 200,
+   "cell_power_bonferroni_exact": 0.9987870386779031,
+   "p_all_leaky_flagged": 0.98665,
+   "p_leaky_all_on_flagged": 0.99865,
+   "mean_leaky_cell_power": 0.9987818181818182,
+   "fwer_false_alarm": 0.0254
+  },
+  {
+   "m": 26,
+   "n_total": 208,
+   "cell_power_bonferroni_exact": 0.9984894393488787,
+   "p_all_leaky_flagged": 0.98265,
+   "p_leaky_all_on_flagged": 0.99815,
+   "mean_leaky_cell_power": 0.9984045454545455,
+   "fwer_false_alarm": 0.01515
+  },
+  {
+   "m": 27,
+   "n_total": 216,
+   "cell_power_bonferroni_exact": 0.9981394058523594,
+   "p_all_leaky_flagged": 0.997,
+   "p_leaky_all_on_flagged": 0.9998,
+   "mean_leaky_cell_power": 0.9997272727272727,
+   "fwer_false_alarm": 0.03895
+  },
+  {
+   "m": 28,
+   "n_total": 224,
+   "cell_power_bonferroni_exact": 0.9996357990499789,
+   "p_all_leaky_flagged": 0.9967,
+   "p_leaky_all_on_flagged": 0.9998,
+   "mean_leaky_cell_power": 0.9997,
+   "fwer_false_alarm": 0.024
+  },
+  {
+   "m": 29,
+   "n_total": 232,
+   "cell_power_bonferroni_exact": 0.9995405740283124,
+   "p_all_leaky_flagged": 0.9949,
+   "p_leaky_all_on_flagged": 0.99965,
+   "mean_leaky_cell_power": 0.9995318181818181,
+   "fwer_false_alarm": 0.0146
+  },
+  {
+   "m": 30,
+   "n_total": 240,
+   "cell_power_bonferroni_exact": 0.9994265110132292,
+   "p_all_leaky_flagged": 0.99925,
+   "p_leaky_all_on_flagged": 0.99995,
+   "mean_leaky_cell_power": 0.9999318181818182,
+   "fwer_false_alarm": 0.03365
+  },
+  {
+   "m": 31,
+   "n_total": 248,
+   "cell_power_bonferroni_exact": 0.9998909104317828,
+   "p_all_leaky_flagged": 0.9988,
+   "p_leaky_all_on_flagged": 0.9998,
+   "mean_leaky_cell_power": 0.999890909090909,
+   "fwer_false_alarm": 0.02085
+  },
+  {
+   "m": 32,
+   "n_total": 256,
+   "cell_power_bonferroni_exact": 0.9998609179693345,
+   "p_all_leaky_flagged": 0.9998,
+   "p_leaky_all_on_flagged": 1.0,
+   "mean_leaky_cell_power": 0.9999818181818182,
+   "fwer_false_alarm": 0.0446
+  },
+  {
+   "m": 33,
+   "n_total": 264,
+   "cell_power_bonferroni_exact": 0.9998244471349973,
+   "p_all_leaky_flagged": 0.99965,
+   "p_leaky_all_on_flagged": 0.99995,
+   "mean_leaky_cell_power": 0.9999681818181818,
+   "fwer_false_alarm": 0.0294
+  },
+  {
+   "m": 34,
+   "n_total": 272,
+   "cell_power_bonferroni_exact": 0.9999673672170558,
+   "p_all_leaky_flagged": 0.9998,
+   "p_leaky_all_on_flagged": 0.99995,
+   "mean_leaky_cell_power": 0.9999818181818182,
+   "fwer_false_alarm": 0.01945
+  },
+  {
+   "m": 35,
+   "n_total": 280,
+   "cell_power_bonferroni_exact": 0.9999580224424597,
+   "p_all_leaky_flagged": 1.0,
+   "p_leaky_all_on_flagged": 1.0,
+   "mean_leaky_cell_power": 1.0,
+   "fwer_false_alarm": 0.03695
+  },
+  {
+   "m": 36,
+   "n_total": 288,
+   "cell_power_bonferroni_exact": 0.999992546193051,
+   "p_all_leaky_flagged": 0.99995,
+   "p_leaky_all_on_flagged": 1.0,
+   "mean_leaky_cell_power": 0.9999954545454546,
+   "fwer_false_alarm": 0.02435
+  },
+  {
+   "m": 37,
+   "n_total": 296,
+   "cell_power_bonferroni_exact": 0.9999902446096782,
+   "p_all_leaky_flagged": 0.99985,
+   "p_leaky_all_on_flagged": 1.0,
+   "mean_leaky_cell_power": 0.9999863636363636,
+   "fwer_false_alarm": 0.0486
+  },
+  {
+   "m": 38,
+   "n_total": 304,
+   "cell_power_bonferroni_exact": 0.999987355300551,
+   "p_all_leaky_flagged": 0.99995,
+   "p_leaky_all_on_flagged": 1.0,
+   "mean_leaky_cell_power": 0.9999954545454546,
+   "fwer_false_alarm": 0.0299
+  },
+  {
+   "m": 39,
+   "n_total": 312,
+   "cell_power_bonferroni_exact": 0.9999977857064992,
+   "p_all_leaky_flagged": 1.0,
+   "p_leaky_all_on_flagged": 1.0,
+   "mean_leaky_cell_power": 1.0,
+   "fwer_false_alarm": 0.02205
+  },
+  {
+   "m": 40,
+   "n_total": 320,
+   "cell_power_bonferroni_exact": 0.9999970843516164,
+   "p_all_leaky_flagged": 1.0,
+   "p_leaky_all_on_flagged": 1.0,
+   "mean_leaky_cell_power": 1.0,
+   "fwer_false_alarm": 0.03955
+  }
+ ]
+}

@@ -37,6 +37,7 @@ class RunConfig:
     clock_mode: str = "LIVE"                # LIVE | SIMULATED
     slot_ms: int = 1000                     # LIVE slot length
     null_control: bool = False              # audit WALL-0 (clean trader only)
+    wall_name: str | None = None            # audit this wall instead (used by the calibration harness: one wall per worker)
     trust: dict = field(default_factory=lambda: {"trader-leaky": 0.9, "trader-partial": 0.9})
     partial_channel: str = "vector_memory"
     seed: int | None = None
@@ -98,7 +99,7 @@ class CampaignRunner:
     # ------------------------------------------------------------------------------------------------ setup
     async def _setup(self) -> None:
         cfg = self.cfg
-        wall_name = "WALL-0 Null control (clean trader only)" if cfg.null_control else "WALL-1 Research | Trading"
+        wall_name = cfg.wall_name or ("WALL-0 Null control (clean trader only)" if cfg.null_control else "WALL-1 Research | Trading")
         async with self.db.session("compliance") as c:
             self.wall_id = (await (await c.execute("SELECT wall_id FROM info_wall WHERE wall_name=%s", (wall_name,))).fetchone())["wall_id"]
             self.wall_name = wall_name
