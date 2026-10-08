@@ -14,8 +14,13 @@ CREATE POLICY upsi_read ON upsi_item FOR SELECT TO high_side, audit_engine USING
 
 -- high_side sees a slot's variants only once the slot has opened (no pre-exposure); audit_engine may read all variants
 -- (it cannot tell which one was shown: the flip is sealed).
-CREATE POLICY variant_read_high  ON canary_variant FOR SELECT TO high_side
-  USING (EXISTS (SELECT 1 FROM canary_slot s WHERE s.slot_id = canary_variant.slot_id AND lower(s.slot_period) <= clock_timestamp()));
+-- The policy calls a SECURITY DEFINER helper because high_side has no privilege on canary_slot (a policy subquery runs
+-- with the caller's rights and would fail with "permission denied").
+CREATE FUNCTION wt_slot_opened(p_slot integer) RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER
+SET search_path = pg_catalog, public, pg_temp
+AS $$ SELECT EXISTS (SELECT 1 FROM canary_slot s WHERE s.slot_id = p_slot AND lower(s.slot_period) <= clock_timestamp()) $$;
+GRANT EXECUTE ON FUNCTION wt_slot_opened(integer) TO high_side;
+CREATE POLICY variant_read_high  ON canary_variant FOR SELECT TO high_side USING (wt_slot_opened(slot_id));
 CREATE POLICY variant_read_audit ON canary_variant FOR SELECT TO audit_engine USING (true);
 CREATE POLICY variant_insert     ON canary_variant FOR INSERT TO audit_engine WITH CHECK (true);
 
