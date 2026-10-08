@@ -8,6 +8,7 @@ import io
 import sys
 
 import psycopg
+import psycopg.sql
 
 from . import config
 from .corpus import CATEGORY_ORDER, UPSI_SUMMARY, short_name
@@ -93,6 +94,10 @@ def seed(dbname: str | None = None, verbose: bool = True) -> bool:
             for r in rows:
                 cp.write_row((r["isin"], r["trade_date"], r["open"], r["high"], r["low"], r["close"], r["volume"]))
 
+        synthetic = not (config.PRICES_CSV.parent / "SOURCE.md").exists() or "Real data" not in (config.PRICES_CSV.parent / "SOURCE.md").read_text()[:200]
+        note = ("SYNTHETIC: generated prices (not market data)" if synthetic else
+                "REAL: NSE end-of-day bars via Yahoo Finance (.NS); ISINs verified against NSE lists. See data/prices/SOURCE.md")
+        conn.execute(psycopg.sql.SQL("COMMENT ON TABLE daily_price IS {}").format(psycopg.sql.Literal(note)))
         # --- synthetic UPSI + SDD -------------------------------------------------------------------------------------
         now = dt.datetime.now(dt.timezone.utc)
         k = 0

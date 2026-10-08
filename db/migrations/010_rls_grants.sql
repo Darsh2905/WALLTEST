@@ -59,6 +59,7 @@ GRANT EXECUTE ON FUNCTION gw_read_prices(integer, date, integer), gw_read_notes(
                           gw_place_orders(integer, text[], text[], integer, numeric[]) TO low_side;
 
 GRANT EXECUTE ON FUNCTION create_campaign(integer, integer, numeric, integer, text, text, jsonb),
+                          create_campaign_cells(integer, integer, numeric, integer, boolean[], text, jsonb),
                           start_campaign(integer, timestamptz), abort_campaign(integer, timestamptz) TO compliance, audit_engine;
 GRANT EXECUTE ON FUNCTION engine_commit_slot(integer, integer, integer, tstzrange, char, timestamptz, smallint, bytea, smallint, text, text),
                           engine_reveal(integer), freeze_campaign(integer, integer, timestamptz),

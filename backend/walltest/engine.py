@@ -32,7 +32,8 @@ Emit = Callable[[dict], None]
 class RunConfig:
     alpha: float = 0.05
     planned_slots: int = 128
-    design: str = "FULL_FACTORIAL"          # FULL_FACTORIAL | ONE_AT_A_TIME | ALL_ON
+    design: str = "FULL_FACTORIAL"          # FULL_FACTORIAL | ONE_AT_A_TIME | ALL_ON | CUSTOM
+    channels: dict = field(default_factory=dict)   # CUSTOM: {"vector_memory": "vary"|"on"|"off", "notes_table": ..., "cache": ...}
     clock_mode: str = "LIVE"                # LIVE | SIMULATED
     slot_ms: int = 1000                     # LIVE slot length
     null_control: bool = False              # audit WALL-0 (clean trader only)
@@ -47,9 +48,9 @@ class RunConfig:
             raise ValueError("alpha must be in (0, 0.5)")
         if self.clock_mode not in ("LIVE", "SIMULATED"):
             raise ValueError("clock_mode must be LIVE or SIMULATED")
-        if self.design not in ("FULL_FACTORIAL", "ONE_AT_A_TIME", "ALL_ON"):
+        if self.design not in ("FULL_FACTORIAL", "ONE_AT_A_TIME", "ALL_ON", "CUSTOM"):
             raise ValueError("unknown design")
-        cells = {"FULL_FACTORIAL": 8, "ONE_AT_A_TIME": 5, "ALL_ON": 1}[self.design]
+        cells = len(self.cells())
         if self.planned_slots % cells or self.planned_slots <= 0:
             raise ValueError(f"planned_slots must be a positive multiple of {cells} for design {self.design}")
         if self.clock_mode == "LIVE" and not (400 <= self.slot_ms <= 5000):
@@ -61,6 +62,22 @@ class RunConfig:
         for k, v in self.trust.items():
             if not (0.0 <= float(v) <= 1.0):
                 raise ValueError(f"trust for {k} must be in [0,1]")
+
+
+    def cells(self) -> list[list[bool]]:
+        """The treatment cells (vector_memory_on, notes_table_on, cache_on) of the design."""
+        import itertools
+        if self.design == "FULL_FACTORIAL":
+            return [list(c) for c in itertools.product((True, False), repeat=3)]
+        if self.design == "ONE_AT_A_TIME":
+            return [[True, True, True], [False, True, True], [True, False, True], [True, True, False], [False, False, False]]
+        if self.design == "ALL_ON":
+            return [[True, True, True]]
+        spec = [self.channels.get(k, "on") for k in ("vector_memory", "notes_table", "cache")]
+        if any(x not in ("vary", "on", "off") for x in spec):
+            raise ValueError("each channel must be 'vary', 'on' or 'off'")
+        axes = [(True, False) if x == "vary" else ((True,) if x == "on" else (False,)) for x in spec]
+        return [list(c) for c in itertools.product(*axes)]
 
 
 class CampaignRunner:
@@ -107,12 +124,12 @@ class CampaignRunner:
         config = {"seed": self.seed, "slot_ms": cfg.slot_ms if cfg.clock_mode == "LIVE" else cfg.sim_slot_ms,
                   "trust": {t.name: t.trust for t in self.traders}, "behaviour": {t.name: t.behaviour for t in self.traders},
                   "channels": {t.name: list(t.channels) for t in self.traders}, "null_control": cfg.null_control,
-                  "scripted_agents_are_validation_instruments": True}
+                  "design": cfg.design, "channels": cfg.channels, "scripted_agents_are_validation_instruments": True}
         async with self.db.session("compliance") as c:
             import json
             self.cid = (await (await c.execute(
-                "SELECT create_campaign(%s,%s,%s::numeric,%s,%s,%s,%s::jsonb) AS cid",
-                (self.wall_id, self.user_id, cfg.alpha, cfg.planned_slots, cfg.design, cfg.clock_mode, json.dumps(config)))).fetchone())["cid"]
+                "SELECT create_campaign_cells(%s,%s,%s::numeric,%s,%s::boolean[],%s,%s::jsonb) AS cid",
+                (self.wall_id, self.user_id, cfg.alpha, cfg.planned_slots, cfg.cells(), cfg.clock_mode, json.dumps(config)))).fetchone())["cid"]
             self.treatments = await (await c.execute(
                 "SELECT treatment_id, vector_memory_on, notes_table_on, cache_on FROM treatment WHERE campaign_id=%s ORDER BY treatment_id", (self.cid,))).fetchall()
         self.n_cells = len(self.treatments)

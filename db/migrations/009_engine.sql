@@ -2,38 +2,48 @@
 -- All SECURITY INVOKER: they run with the caller's (compliance / audit_engine) privileges, so RLS still applies.
 
 -- Step 1: the compliance officer creates a campaign for a wall, choosing alpha, the slot target and the treatment cells.
+-- create_campaign_cells takes the cells explicitly: a boolean[][] of (vector_memory_on, notes_table_on, cache_on) rows. The preset
+-- designs below are shorthands for it:
 --   FULL_FACTORIAL  all 2^3 on/off combinations of (vector memory, notes table, cache)  -> 8 cells
 --   ONE_AT_A_TIME   ALL_ON, each channel switched off alone, ALL_OFF                    -> 5 cells
 --   ALL_ON          a single cell with every channel on                                 -> 1 cell
 -- planned_slots must be a multiple of the number of cells so every cell has the same planned n.
-CREATE FUNCTION create_campaign(p_wall integer, p_user integer, p_alpha numeric, p_planned_slots integer,
-                                p_design text DEFAULT 'FULL_FACTORIAL', p_clock text DEFAULT 'LIVE',
-                                p_config jsonb DEFAULT '{}'::jsonb)
+CREATE FUNCTION create_campaign_cells(p_wall integer, p_user integer, p_alpha numeric, p_planned_slots integer,
+                                      p_cells boolean[], p_clock text DEFAULT 'LIVE', p_config jsonb DEFAULT '{}'::jsonb)
 RETURNS integer LANGUAGE plpgsql
 SET search_path = pg_catalog, public, pg_temp
 AS $$
-DECLARE cid integer; cells boolean[][]; n_cells integer;
+DECLARE cid integer; n_cells integer;
 BEGIN
-  cells := CASE p_design
-    WHEN 'FULL_FACTORIAL' THEN ARRAY[[true,true,true],[true,true,false],[true,false,true],[true,false,false],
-                                     [false,true,true],[false,true,false],[false,false,true],[false,false,false]]
-    WHEN 'ONE_AT_A_TIME'  THEN ARRAY[[true,true,true],[false,true,true],[true,false,true],[true,true,false],[false,false,false]]
-    WHEN 'ALL_ON'         THEN ARRAY[[true,true,true]]
-  END;
-  IF cells IS NULL THEN RAISE EXCEPTION 'unknown design %', p_design; END IF;
-  n_cells := array_length(cells, 1);
+  n_cells := COALESCE(array_length(p_cells, 1), 0);
+  IF n_cells = 0 OR array_length(p_cells, 2) <> 3 THEN RAISE EXCEPTION 'cells must be an N x 3 boolean array'; END IF;
   IF p_planned_slots % n_cells <> 0 THEN
     RAISE EXCEPTION 'planned_slots (%) must be a multiple of the number of treatment cells (%)', p_planned_slots, n_cells;
   END IF;
   INSERT INTO audit_campaign (wall_id, created_by, alpha, planned_slots, clock_mode, config)
-  VALUES (p_wall, p_user, p_alpha, p_planned_slots, p_clock,
-          p_config || jsonb_build_object('design', p_design)) RETURNING campaign_id INTO cid;
+  VALUES (p_wall, p_user, p_alpha, p_planned_slots, p_clock, p_config) RETURNING campaign_id INTO cid;
   FOR i IN 1..n_cells LOOP
     INSERT INTO treatment (campaign_id, vector_memory_on, notes_table_on, cache_on)
-    VALUES (cid, cells[i][1], cells[i][2], cells[i][3]);
+    VALUES (cid, p_cells[i][1], p_cells[i][2], p_cells[i][3]);
   END LOOP;
   RETURN cid;
 END
+$$;
+
+CREATE FUNCTION create_campaign(p_wall integer, p_user integer, p_alpha numeric, p_planned_slots integer,
+                                p_design text DEFAULT 'FULL_FACTORIAL', p_clock text DEFAULT 'LIVE',
+                                p_config jsonb DEFAULT '{}'::jsonb)
+RETURNS integer LANGUAGE sql
+SET search_path = pg_catalog, public, pg_temp
+AS $$
+  SELECT create_campaign_cells(p_wall, p_user, p_alpha, p_planned_slots,
+    CASE p_design
+      WHEN 'FULL_FACTORIAL' THEN ARRAY[[true,true,true],[true,true,false],[true,false,true],[true,false,false],
+                                       [false,true,true],[false,true,false],[false,false,true],[false,false,false]]
+      WHEN 'ONE_AT_A_TIME'  THEN ARRAY[[true,true,true],[false,true,true],[true,false,true],[true,true,false],[false,false,false]]
+      WHEN 'ALL_ON'         THEN ARRAY[[true,true,true]]
+      ELSE NULL END,
+    p_clock, p_config || jsonb_build_object('design', p_design))
 $$;
 
 CREATE FUNCTION start_campaign(p_campaign integer, p_at timestamptz DEFAULT clock_timestamp())
