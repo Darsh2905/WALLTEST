@@ -107,8 +107,10 @@ q("slots_public", "audit_engine", """
 SELECT p.slot_id, p.treatment_id, p.commitment, iso_us(p.committed_at) AS committed_at,
        iso_us(p.slot_start) AS slot_start, iso_us(p.slot_end) AS slot_end, p.start_us::text AS start_us, p.state,
        p.vector_memory_on, p.notes_table_on, p.cache_on,
-       (row_number() OVER (ORDER BY p.slot_start) - 1)::int AS idx
+       (row_number() OVER (ORDER BY p.slot_start) - 1)::int AS idx,
+       r.flip_bit, r.commitment_ok
 FROM v_slot_public p
+LEFT JOIN v_slot_reveal r ON r.slot_id = p.slot_id          -- RLS: a row only exists once the slot has ended
 WHERE p.campaign_id = %(cid)s
 ORDER BY p.slot_start
 LIMIT %(limit)s OFFSET %(offset)s""", "Commitments are public from the moment they are published; flips are not.")
@@ -118,6 +120,11 @@ SELECT slot_id, campaign_id, commitment, iso_us(committed_at) AS committed_at, i
        iso_us(slot_end) AS slot_end, start_us::text AS start_us, flip_bit, salt_hex, preimage, recomputed, commitment_ok
 FROM v_slot_reveal WHERE slot_id = %(sid)s""",
   "audit_engine only, and only after the slot has ended: RLS on sealed_flip returns no row before that.")
+
+q("reveals_all", "audit_engine", """
+SELECT slot_id, campaign_id, commitment, iso_us(slot_start) AS slot_start, flip_bit, salt_hex, commitment_ok
+FROM v_slot_reveal WHERE campaign_id = %(cid)s ORDER BY slot_start""",
+  "Bulk reveal for the browser to re-verify every slot. Only slots that have ended appear (RLS).")
 
 q("slot_public_one", "audit_engine", """
 SELECT p.slot_id, p.campaign_id, p.treatment_id, p.commitment, iso_us(p.committed_at) AS committed_at,

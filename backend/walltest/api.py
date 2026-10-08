@@ -153,6 +153,10 @@ def create_app(dbname: str | None = None, enable_lab: bool = True) -> FastAPI:
     async def slots(cid: int, limit: int = Query(400, le=5000), offset: int = 0):
         return respond(await run_q("slots_public", cid=cid, limit=limit, offset=offset), "slots_public", cid=cid)
 
+    @app.get("/api/campaigns/{cid}/reveals")
+    async def reveals(cid: int):
+        return respond(await run_q("reveals_all", cid=cid), "reveals_all", cid=cid)
+
     @app.get("/api/slots/{sid}")
     async def slot(sid: int):
         pub = await run_q("slot_public_one", sid=sid)
