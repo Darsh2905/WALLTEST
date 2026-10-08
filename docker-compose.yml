@@ -1,0 +1,40 @@
+# WALLTEST: one command (`docker compose up --build`) brings up PostgreSQL 16 + pgvector, runs migrations,
+# seeds data and serves the API + UI on http://localhost:8000.
+# The credentials below are DEMO-ONLY defaults for a local machine; override with a .env file.
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: walltest_admin
+      POSTGRES_PASSWORD: ${WALLTEST_ADMIN_PASSWORD:-walltest_admin_pw}
+      POSTGRES_DB: walltest
+    ports:
+      - "${WALLTEST_DB_PORT:-5433}:5432"
+    volumes:
+      - walltest_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U walltest_admin -d walltest"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  api:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      WALLTEST_DB_HOST: db
+      WALLTEST_DB_PORT: "5432"
+      WALLTEST_DB_NAME: walltest
+      WALLTEST_ADMIN_USER: walltest_admin
+      WALLTEST_ADMIN_PASSWORD: ${WALLTEST_ADMIN_PASSWORD:-walltest_admin_pw}
+      WALLTEST_API_PASSWORD: ${WALLTEST_API_PASSWORD:-walltest_api_pw}
+      WALLTEST_LAB_PASSWORD: ${WALLTEST_LAB_PASSWORD:-walltest_lab_pw}
+      WALLTEST_LLM: ${WALLTEST_LLM:-0}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    ports:
+      - "${WALLTEST_PORT:-8000}:8000"
+
+volumes:
+  walltest_pgdata:
