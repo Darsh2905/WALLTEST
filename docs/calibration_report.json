@@ -1,0 +1,80 @@
+{
+ "workers": 4,
+ "db": "walltest_calibration",
+ "A": {
+  "n_campaigns": 2000,
+  "slots_each": 40,
+  "family_size": 1,
+  "alpha_0.05": {
+   "false_alarms": 86,
+   "rate": 0.043,
+   "ci99.9": [
+    0.029554302527729354,
+    0.05996798941413481
+   ],
+   "exact_size_of_test": 0.040345233875996186,
+   "alpha": 0.05,
+   "ok": true,
+   "within_3sd_of_exact_size": true
+  },
+  "alpha_0.001": {
+   "false_alarms": 0,
+   "rate": 0.0,
+   "ci99.9": [
+    0.0,
+    0.0037932386549021694
+   ],
+   "exact_size_of_test": 0.0003397741274966391,
+   "alpha": 0.001,
+   "ok": true,
+   "within_3sd_of_exact_size": true
+  },
+  "stored_verdict_equals_family_verdict_at_0.05": true,
+  "clean_pooled_accuracy": {
+   "correct": 40190,
+   "slots": 80000,
+   "accuracy": 0.502375,
+   "p_two_sided_vs_0.5": 0.1802555988868867
+  }
+ },
+ "B": {
+  "n_campaigns": 400,
+  "slots_each": 50,
+  "family_size": 15,
+  "note": "the three agents share the same momentum decisions, so the family is strongly dependent; Holm needs no independence assumption",
+  "alpha_0.05": {
+   "false_alarms": 2,
+   "rate": 0.005,
+   "ci99.9": [
+    7.999942204017484e-05,
+    0.029752671880632256
+   ],
+   "alpha": 0.05,
+   "ok": true
+  },
+  "alpha_0.001": {
+   "false_alarms": 0,
+   "rate": 0.0,
+   "ci99.9": [
+    0.0,
+    0.01882285144139194
+   ],
+   "alpha": 0.001,
+   "ok": true
+  },
+  "stored_verdict_equals_family_verdict_at_0.05": true
+ },
+ "C": {
+  "n_campaigns": 100,
+  "P_all_truly_leaky_cells_flagged": 0.85,
+  "P_leaky_all_on_flagged": 0.97,
+  "P_any_false_alarm_on_null_cells": 0.06,
+  "monte_carlo_prediction": {
+   "P_all": 0.8592,
+   "FWER": 0.0307
+  },
+  "consistent_with_prediction": true
+ },
+ "elapsed_s": 914,
+ "pass": true
+}

@@ -103,6 +103,7 @@ export default function Verdicts() {
               <span><span className="text-ink-3">family K</span> <b className="num">{d.campaign.n_cells * (d.campaign.n_low ?? 1)}</b></span>
               {d.campaign.clock_mode === 'SIMULATED' ? <Chip tone="steel">simulated clock</Chip> : <Chip>live clock</Chip>}
               <Chip tone={d.campaign.status === 'CLOSED' ? 'solid' : 'plain'}>{d.campaign.status}</Chip>
+              {d.no_trade.some((x) => x.n_no_trade > 0) && <Chip title="Slots with no net position count as wrong. In a LIVE run a late order (slow machine) lands here." className="gap-1">no-trade slots: {d.no_trade.filter((x) => x.n_no_trade > 0).map((x) => `${x.low_agent.replace('trader-', '')} ${x.n_no_trade}/${x.n_slots}`).join(' · ')}</Chip>}
               {frozen && <span className="flex items-center gap-1 text-ink-2" title="result_hash is recomputed from the stored fields"><IconCheck size={14} className="text-steel" />snapshot hashes {allOk ? 'verified' : <b className="text-leak">MISMATCH</b>}</span>}
               <span className="text-ink-3 ml-auto">{fmtTime(d.campaign.closed_at ?? d.campaign.started_at)}</span>
             </div>)}

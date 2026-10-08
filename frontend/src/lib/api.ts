@@ -43,6 +43,12 @@ export function useApi<T>(path: string | null, deps: unknown[] = []): ApiState<T
   return { ...state, reload }
 }
 
+/** The SQL behind a panel whose data arrives over the live stream. */
+export function useSql(names: string[]): SqlMeta[] {
+  const r = useApi<{ sql: SqlMeta[] }>(`/api/sql?names=${names.join(',')}`)
+  return r.data?.sql ?? []
+}
+
 // ---- shared types -------------------------------------------------------------------------------------------------------
 export interface Treatment { treatment_id: number; vector_memory_on: boolean; notes_table_on: boolean; cache_on: boolean }
 export interface Campaign {
@@ -64,7 +70,7 @@ export interface LiveRow {
 export interface Effect { low_agent: string; channel: string; acc_on: number | null; acc_off: number | null; n_on: number; n_off: number; main_effect: number | null }
 export interface VerdictsData {
   campaign: Campaign; treatments: Treatment[]; frozen: FrozenRow[]; live: LiveRow[]; channel_effect: Effect[]
-  access_summary: { asset_name: string; op: string; outcome: string; n: number }[]; doc: string
+  access_summary: { asset_name: string; op: string; outcome: string; n: number }[]; no_trade: { low_agent: string; n_no_trade: number; n_slots: number }[]; doc: string
 }
 
 export const AGENT_COLOR: Record<string, string> = { 'trader-leaky': 'var(--s-leaky)', 'trader-clean': 'var(--s-clean)', 'trader-partial': 'var(--s-partial)' }

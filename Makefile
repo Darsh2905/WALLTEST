@@ -27,7 +27,7 @@ test:            ## everything except the browser tests: pytest against real Pos
 
 e2e:             ## Playwright end-to-end (drives a LIVE campaign through the UI; ~3 minutes)
 	cd frontend && npm run build
-	cd backend && ../$(VENV_PY) -m pytest -q -m e2e tests/e2e
+	cd backend && ../$(VENV_PY) -m pytest -q -m e2e e2e_tests
 
 frontend-test:
 	cd frontend && npm test

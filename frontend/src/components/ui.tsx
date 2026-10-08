@@ -161,6 +161,14 @@ export function SqlDrawer({ open, onClose, title, queries }: { open: boolean; on
   )
 }
 
+export function SqlButton({ queries, title }: { queries: SqlMeta[]; title: string }) {
+  const [open, setOpen] = useState(false)
+  return (<>
+    <button className="btn btn-sm btn-ghost text-ink-2" onClick={() => setOpen(true)} data-testid="show-sql"><IconCode size={14} />Show SQL</button>
+    <SqlDrawer open={open} onClose={() => setOpen(false)} title={title} queries={queries} />
+  </>)
+}
+
 /* ---------- panel ------------------------------------------------------------------------------------------------------------ */
 export function Panel({ title, subtitle, sql, actions, children, className, bodyClass, loading, error, onRetry, id }: {
   title: React.ReactNode; subtitle?: React.ReactNode; sql?: SqlMeta[]; actions?: React.ReactNode; children?: React.ReactNode

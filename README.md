@@ -107,7 +107,7 @@ RESULTS_PLACEHOLDER
 docker-compose.yml  Dockerfile  Makefile  scripts/demo.py       one-command demo
 db/migrations/      000–011 numbered SQL migrations (the schema, triggers, RLS, statistics, gateway, engine)
 backend/walltest/   engine, scripted agents, FastAPI app, queries registry, Rules Lab, run manager, migrate/seed
-backend/tests/      pytest suite (+ tests/e2e Playwright)
+backend/tests/      pytest suite (+ e2e_tests Playwright)
 frontend/           Vite + React + TypeScript + Tailwind + D3
 data/prices/        real NSE end-of-day CSV + SOURCE.md (provenance, fetch date, ISIN verification)
 scripts/            fetch_prices, choose_defaults, calibrate, screenshots, reset_db, demo

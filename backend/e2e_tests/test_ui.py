@@ -63,7 +63,8 @@ def test_rules_lab_shows_real_postgres_errors(page):
     assert page.errors == []
 
 
-def test_every_panel_has_a_show_sql_drawer(page):
+def test_every_panel_has_a_show_sql_drawer(page, live):
+    """Needs data on every page (empty states have no panels), hence after the live campaign."""
     for _, path in PAGES:
         goto(page, path)
         btn = page.locator("[data-testid=show-sql]").first
@@ -176,7 +177,8 @@ def test_partial_agents_leak_is_attributed_to_its_channel(live):
     for ch in ("vector_memory", "notes_table", "cache"):
         txt = g.locator(f"[data-effect='trader-partial:{ch}']").inner_text()
         eff[ch] = float(re.findall(r"[+-]?\d+\.\d+", txt)[-1])
-    assert eff["vector_memory"] > 0.5 and abs(eff["notes_table"]) < 0.25 and abs(eff["cache"]) < 0.25, eff
+    # planted: accuracy 0.5 + 0.9/2 = 0.95 with the channel on vs 0.5 off, so the vector main effect is +0.45 (sampling sd ~0.05)
+    assert eff["vector_memory"] > 0.30 and abs(eff["notes_table"]) < 0.20 and abs(eff["cache"]) < 0.20, eff
     # every flagged tile must sit in a vector-on row (the row label is the first child of the tile's row wrapper)
     labels = leak_tiles.evaluate_all("els => els.map(e => e.parentElement.firstElementChild.textContent)")
     assert labels and all("vector" in lb for lb in labels), labels

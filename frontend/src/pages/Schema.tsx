@@ -86,7 +86,7 @@ export default function Schema() {
     zoomRef.current = z
     d3.select(svg.current).call(z)
     return () => { d3.select(svg.current).on('.zoom', null) }
-  }, [])
+  }, [!!L])   // the SVG only exists once the schema has loaded
   useEffect(() => { if (L) requestAnimationFrame(() => fit()) }, [L]) // eslint-disable-line
   useEffect(() => { const ro = new ResizeObserver(() => fit()); if (svg.current) ro.observe(svg.current); return () => ro.disconnect() }, [L]) // eslint-disable-line
 
@@ -153,7 +153,7 @@ export default function Schema() {
         </Panel>
 
         <div className="grid gap-5 content-start" style={{ gridTemplateColumns: "minmax(0, 1fr) minmax(0, 2fr)" }}>
-          <Panel title="Row counts" sql={undefined} bodyClass="max-h-[420px] overflow-auto">
+          <Panel title="Row counts" sql={s.sql.filter((q) => q.name === "row_counts")} bodyClass="max-h-[420px] overflow-auto">
             {!s.data ? <div className="p-3"><Skeleton h={200} /></div> : <table className="t num" data-testid="row-counts"><tbody>
               {[...s.data.tables].sort((a, b) => b.rows - a.rows).map((t) => <tr key={t.name} className={cx('cursor-pointer', sel === t.name && 'bg-steel-bg')} onClick={() => setSel(sel === t.name ? null : t.name)} data-count-table={t.name}><td className="mono text-[0.82rem]">{t.name}</td><td className="r">{fmtInt(t.rows)}</td></tr>)}</tbody></table>}
           </Panel>

@@ -49,7 +49,8 @@ export default function RulesLab() {
       <PageHeader title="DB Rules Lab" lead="Fixed buttons only; there is no free-form SQL box. Each button tries a forbidden operation under the real database role, inside a transaction that is always rolled back, and shows PostgreSQL's own error text." />
       <div className="mb-3"><Banner tone="plain">Everything runs as a real role (<span className="mono">SET ROLE</span>). Where a trigger is the point, the privilege layer refuses first and the lab then steps up to the table owner to show the trigger firing even for the owner. The lab login is a separate non-superuser account used only here.</Banner></div>
       <div className="grid gap-5" style={{ gridTemplateColumns: 'minmax(0, 5fr) minmax(0, 7fr)' }}>
-        <Panel title="Forbidden operations" subtitle={`${list.length} fixed scenarios`} loading={cases.loading && !cases.data} error={cases.error} onRetry={cases.reload} bodyClass="p-3">
+        <Panel title="Forbidden operations" subtitle={`${list.length} fixed scenarios`}
+          sql={list.flatMap((c) => c.steps.map((st, i) => ({ name: `${c.id} · step ${i + 1}${st.setup ? ' (setup)' : ''}`, role: st.role, sql: st.sql, note: st.caption })))} loading={cases.loading && !cases.data} error={cases.error} onRetry={cases.reload} bodyClass="p-3">
           <ul className="space-y-2.5" data-testid="lab-cases">
             {list.map((c) => (
               <li key={c.id} className={cx('rounded-lg border p-3 flex items-start gap-3', res?.id === c.id ? 'border-steel bg-steel-bg' : 'border-line bg-surface')}>

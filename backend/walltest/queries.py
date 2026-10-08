@@ -84,6 +84,12 @@ WHERE v.campaign_id = %(cid)s
 ORDER BY a.agent_name, t.vector_memory_on DESC, t.notes_table_on DESC, t.cache_on DESC""",
   "v_verdict: every inferential column is NULL until each cell has reached its planned n (no peeking).")
 
+q("no_trade", "audit_engine", """
+SELECT a.agent_name AS low_agent, sum(p.n_no_trade)::int AS n_no_trade, sum(p.n_slots)::int AS n_slots
+FROM v_progress p JOIN agent a ON a.agent_id = p.low_agent_id
+WHERE p.campaign_id = %(cid)s GROUP BY a.agent_name ORDER BY a.agent_name""",
+  "Slots in which an agent had no net position. They count as WRONG by definition; in a LIVE run a late order (slow machine) shows up here.")
+
 q("channel_effect", "audit_engine", """
 SELECT a.agent_name AS low_agent, e.channel, e.acc_on, e.acc_off, e.n_on, e.n_off,
        e.acc_on - e.acc_off AS main_effect

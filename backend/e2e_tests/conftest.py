@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-BACKEND = Path(__file__).resolve().parents[2]
+BACKEND = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(BACKEND))
 from walltest import config, migrate, seed  # noqa: E402
 

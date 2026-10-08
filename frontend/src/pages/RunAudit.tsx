@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { LineChart, Series } from '../components/LineChart'
 import { Banner, Chip, EmptyState, IconLock, IconPlay, IconStop, PageHeader, Panel, Stat, VerdictChip } from '../components/ui'
-import { AGENT_COLOR, AGENT_DASH, VerdictsData, useApi } from '../lib/api'
+import { AGENT_COLOR, AGENT_DASH, VerdictsData, useApi, useSql } from '../lib/api'
 import { useRun } from '../lib/run'
 import { cx, fmtAcc, fmtClock, fmtInt, fmtPct } from '../lib/format'
 
@@ -42,6 +42,7 @@ export default function RunAudit() {
   const plantedAcc = f ? 0.5 + Math.max(f.trustLeaky, f.trustPartial) / 2 : 0.95
   const power = useApi<any>(f && valid ? `/api/power/point?n=${perCell}&alpha=${f.alpha / K}&acc=${f.null_control ? 0.55 : plantedAcc}&power=0.8` : null, [f?.alpha, K, perCell, plantedAcc])
   const running = !!state.campaign && !state.finished
+  const sqlLive = useSql(['progress_series', 'access_summary', 'verdicts_live'])
   const eta = f ? (f.clock_mode === 'LIVE' ? (f.planned_slots * f.slot_ms) / 1000 + 4 : f.planned_slots / 50) : 0
 
   async function go() {
@@ -74,7 +75,7 @@ export default function RunAudit() {
       <PageHeader title="Run audit" lead="Configure a campaign and start it. Progress streams live from the database; the verdict appears only when the planned n is reached." />
       {state.campaign?.simulated_clock && running && <div className="mb-3"><Banner tone="steel"><b>Simulated clock.</b> All timestamps in this run are back-dated by the engine and labelled as such everywhere.</Banner></div>}
       <div className="grid gap-5" style={{ gridTemplateColumns: 'minmax(0, 7fr) minmax(0, 5fr)' }}>
-        <Panel title="Campaign configuration" subtitle="Defaults are derived from an exact power calculation, not tuned (see the panel on the right)." bodyClass="p-4" loading={defaults.loading} error={defaults.error} onRetry={defaults.reload}>
+        <Panel title="Campaign configuration" subtitle="Defaults are derived from an exact power calculation, not tuned (see the panel on the right)." bodyClass="p-4" sql={defaults.data?.sql} loading={defaults.loading} error={defaults.error} onRetry={defaults.reload}>
           {f && (
             <div className="space-y-4">
               <div className="flex flex-wrap gap-2" role="group" aria-label="Presets">
@@ -149,7 +150,7 @@ export default function RunAudit() {
       </div>
 
       <div className="mt-5 grid gap-5">
-        <Panel title="Live progress" subtitle="Streaming from the database (server-sent events)." bodyClass="p-4"
+        <Panel title="Live progress" subtitle="Streaming from the database (server-sent events)." bodyClass="p-4" sql={sqlLive}
           actions={state.campaign ? <Chip tone={running ? 'steel' : 'plain'}>{running ? (state.campaign.simulated_clock ? 'SIMULATED CLOCK' : 'LIVE') : state.cancelled ? 'cancelled' : state.frozen ? 'frozen' : 'finished'}</Chip> : null}>
           {!state.campaign ? <EmptyState title="No campaign running" icon={<IconPlay size={26} />}>Start a campaign above. Commitments are published before each slot opens, flips are revealed after it ends, and the cumulative chart below fills in as slots are scored.</EmptyState> : (
             <div className="space-y-4">

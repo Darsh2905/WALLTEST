@@ -105,6 +105,12 @@ def create_app(dbname: str | None = None, enable_lab: bool = True) -> FastAPI:
                 "sql": [{"name": "defaults_power", "role": "audit_engine", "note": "Exact binomial power of the default design at the Bonferroni level alpha / K.",
                          "sql": "SELECT power_exact(n_per_cell, planted_accuracy, alpha / K), min_detectable_acc(n_per_cell, alpha / K), leakage_bits(planted_accuracy)"}]}
 
+    @app.get("/api/sql")
+    async def sql_registry(names: str):
+        """The named queries behind panels that are filled from the live stream (no data is returned, only the SQL text)."""
+        wanted = [n for n in names.split(",") if n in Q]
+        return {"sql": sql_meta(*wanted)}
+
     # ------------------------------------------------------------------ wall
     @app.get("/api/wall")
     async def wall():
@@ -140,10 +146,11 @@ def create_app(dbname: str | None = None, enable_lab: bool = True) -> FastAPI:
         live = await run_q("verdicts_live", cid=cid) if not frozen else []
         eff = await run_q("channel_effect", cid=cid)
         acc = await run_q("access_summary", cid=cid) if c["started_at"] else []
+        nt = await run_q("no_trade", cid=cid)
         return respond({"campaign": c, "treatments": await run_q("treatments", cid=cid), "frozen": frozen, "live": live,
-                        "channel_effect": eff, "access_summary": acc,
+                        "channel_effect": eff, "access_summary": acc, "no_trade": nt,
                         "doc": "Verdict = Holm-adjusted p <= alpha over the (treatment x LOW agent) family. NO_EVIDENCE is not proof of absence: see min_detectable_acc."},
-                       "verdicts_frozen" if frozen else "verdicts_live", "channel_effect", "access_summary", cid=cid)
+                       "verdicts_frozen" if frozen else "verdicts_live", "channel_effect", "access_summary", "no_trade", cid=cid)
 
     @app.get("/api/campaigns/{cid}/progress")
     async def progress(cid: int):

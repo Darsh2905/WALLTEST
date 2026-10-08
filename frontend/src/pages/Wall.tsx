@@ -1,8 +1,8 @@
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import Hero from '../components/Hero'
-import { Banner, Chip, EmptyState, IconCheck, IconLock, IconPlay, IconStop, Panel, PageHeader, VerdictChip, Skeleton } from '../components/ui'
-import { AGENT_BLURB, AGENT_COLOR, AGENT_DASH, FrozenRow, Resp, SqlMeta, VerdictsData, useApi } from '../lib/api'
+import { Banner, Chip, EmptyState, IconCheck, IconLock, IconPlay, IconStop, Panel, PageHeader, SqlButton, VerdictChip, Skeleton } from '../components/ui'
+import { AGENT_BLURB, AGENT_COLOR, AGENT_DASH, FrozenRow, Resp, SqlMeta, VerdictsData, useApi, useSql } from '../lib/api'
 import { useRun } from '../lib/run'
 import { cx, fmtAcc, fmtBits, fmtP, fmtPct, shortHash } from '../lib/format'
 
@@ -104,7 +104,10 @@ export default function Wall() {
   const agentNames = liveAgents ?? (Object.keys(agentRows).length ? Object.keys(agentRows) : ['trader-leaky', 'trader-partial', 'trader-clean'])
   const config = state.campaign && !state.frozen ? { trust: state.campaign.trust, channels: Object.fromEntries(state.campaign.agents.map((a: string) => [a, a === 'trader-leaky' ? ['vector_memory', 'notes_table', 'feature_cache'] : a === 'trader-partial' ? ['vector_memory'] : []])) } : verdicts.data?.campaign.config
   const live = (a: string) => (state.campaign && !state.frozen ? { n: state.agents[a]?.n ?? 0, correct: state.agents[a]?.correct ?? 0, planned: state.campaign.planned_slots } : null)
-  const sqlWall: SqlMeta[] = wall.sql
+  const sqlWall: SqlMeta[] = [...wall.sql, ...useSql(['access_summary'])]
+  const sqlSlots = useSql(['slots_public', 'slot_reveal'])
+  const sqlVerdictFallback = useSql(['verdicts_frozen', 'verdicts_live'])
+  const sqlVerdict = verdicts.sql.length ? verdicts.sql : sqlVerdictFallback
 
   return (
     <div>
@@ -128,7 +131,7 @@ export default function Wall() {
         </Panel>
 
         <Panel title="Slot timeline" subtitle={<>sealed <b>→</b> committed hash <b>→</b> revealed with a verified tick. Each tick is the database re-hashing the revealed flip; the browser re-checks it on the Commit–reveal page.</>}
-          bodyClass="px-4 py-3" sql={undefined}>
+          bodyClass="px-4 py-3" sql={sqlSlots}>
           <div className="flex gap-2 overflow-x-auto pb-1" style={{ minHeight: 78 }} data-testid="timeline">
             {timeline.length === 0 ? <div className="text-ink-3 text-[0.9rem] self-center">No slots yet.</div> : timeline.map((s) => <SlotCell key={s.slot_id} s={s} to={`/inspector/${state.campaign?.campaign_id ?? cid}?slot=${s.slot_id}`} />)}
           </div>
@@ -136,7 +139,7 @@ export default function Wall() {
 
         <div>
           <div className="flex items-end justify-between mb-2">
-            <h2 className="font-semibold text-[1.05rem]">Verdict per trading agent</h2>
+            <h2 className="font-semibold text-[1.05rem] flex items-center gap-2">Verdict per trading agent <SqlButton queries={sqlVerdict} title="Verdict per trading agent" /></h2>
             <div className="text-[0.82rem] text-ink-3">{verdicts.data ? <>campaign #{verdicts.data.campaign.campaign_id} · {verdicts.data.campaign.clock_mode === 'SIMULATED' ? 'simulated clock' : 'live clock'} · α = {verdicts.data.campaign.alpha} · <Link className="underline" to={`/verdicts/${verdicts.data.campaign.campaign_id}`}>full statistics</Link></> : liveAgents ? 'withheld until the planned n' : ''}</div>
           </div>
           <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))' }}>
