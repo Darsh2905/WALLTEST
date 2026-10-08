@@ -10,7 +10,7 @@ import sys
 import psycopg
 import psycopg.sql
 
-from . import config
+from . import config, roles
 from .corpus import CATEGORY_ORDER, UPSI_SUMMARY, short_name
 
 # (name, area_type)
@@ -111,6 +111,7 @@ def seed(dbname: str | None = None, verbose: bool = True) -> bool:
                      now + dt.timedelta(days=2 + k))).fetchone()[0]
                 conn.execute("INSERT INTO sdd_entry(upsi_id, shared_by_user, recipient_agent, purpose, shared_at) VALUES (%s,%s,%s,%s,%s)",
                              (upsi, u_deal, agent["research-agent"], "Research coverage under confidentiality undertaking", now - dt.timedelta(days=3, hours=k - 1)))
+        roles.provision(conn)
         conn.commit()
         if verbose:
             print(f"seeded: {len(secs)} securities, {len(rows)} daily bars, {k} UPSI items, {len(AGENTS)} agents, {len(WALLS)} walls")
@@ -133,6 +134,7 @@ def seed_llm(dbname: str | None = None, verbose: bool = True) -> bool:
             conn.execute("INSERT INTO wall_membership SELECT %s, agent_id, %s FROM agent WHERE agent_name=%s", (w, side, name))
         for asset in ("daily_price", "notes_table", "vector_memory", "feature_cache"):
             conn.execute("INSERT INTO access_grant(agent_id, asset_id, privilege, granted_by, valid_from) SELECT %s, asset_id, 'READ', %s, %s FROM data_asset WHERE asset_name=%s", (aid, comp, GRANT_FROM, asset))
+        roles.provision(conn)
         conn.commit()
         if verbose:
             print("seeded optional LLM trader and WALL-2")

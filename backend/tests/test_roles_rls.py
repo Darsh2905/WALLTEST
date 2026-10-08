@@ -147,6 +147,8 @@ def test_only_the_engine_may_insert_slots_and_flips(fx, conn):
 
 def test_gateway_and_stats_functions_not_executable_by_public(conn):
     for fn, role in (("wt_gate(1,'x','READ',NULL,NULL)", "low_side"), ("wt_context(1)", "low_side"),
-                     ("gw_read_canary(1)", "low_side"), ("gw_place_orders(1,ARRAY['x'],ARRAY['BUY'],1)", "high_side"),
+                     ("gw_read_canary()", "low_side"), ("gw_place_orders(ARRAY['x'],ARRAY['BUY'],1)", "high_side"),
+                     ("wt_impl_place_orders(1,ARRAY['x'],ARRAY['BUY'],1)", "low_side"), ("wt_impl_read_canary(1)", "high_side"),
+                     ("wt_caller_agent()", "low_side"), ("evidence_leaves(1)", "low_side"), ("log_evalue_mix(10,5)", "low_side"),
                      ("binom_upper_p(10,5)", "low_side")):
         expect_error(conn, f"SELECT * FROM {fn}", sqlstate="42501", role=role)

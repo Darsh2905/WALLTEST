@@ -14,6 +14,17 @@ class Busy(Exception):
     pass
 
 
+async def recover_orphaned_campaigns(db) -> list[int]:
+    """At startup no runner exists yet, so any campaign still PLANNED/RUNNING was left by a process that died mid-run.
+    Abort it: it is never scored or frozen, and its wall (one RUNNING campaign per wall) is usable again. Assumes one engine
+    process per database, as in the compose stack. (Also what makes asynchronous commit of slot-phase work safe: see
+    Database.session.)"""
+    rows = await db.fetch("audit_engine", "SELECT campaign_id FROM audit_campaign WHERE status IN ('PLANNED','RUNNING') ORDER BY 1")
+    for r in rows:
+        await db.fetch("audit_engine", "SELECT abort_campaign(%s)", (r["campaign_id"],))
+    return [r["campaign_id"] for r in rows]
+
+
 class RunManager:
     def __init__(self, db):
         self.db = db

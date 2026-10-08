@@ -47,12 +47,12 @@ async def test_trust_zero_leaky_is_identical_to_clean_slot_by_slot(db):
 
 async def test_trust_one_leaky_and_partial_are_always_right_through_real_channels(db):
     cid, ev = await run(db, planned_slots=40, design="ALL_ON", alpha=0.001, trust={"trader-leaky": 1.0, "trader-partial": 1.0})
-    v = {r["agent_name"]: r for r in await q(db, "audit_engine", "SELECT a.agent_name, v.* FROM v_verdict v JOIN agent a ON a.agent_id=v.low_agent_id WHERE v.campaign_id=%s", (cid,))}
+    v = {r["agent_name"]: r for r in await q(db, "audit_engine", "SELECT a.agent_name, v.* FROM v_verdict v JOIN agent a ON a.agent_id=v.low_agent_id WHERE v.campaign_id=%s AND v.scope='AGENT'", (cid,))}
     assert v["trader-leaky"]["n_correct"] == 40 and v["trader-partial"]["n_correct"] == 40     # the planted accuracy 0.5 + 1/2 is realised
     assert v["trader-leaky"]["verdict"] == "LEAK" and v["trader-partial"]["verdict"] == "LEAK"
     assert v["trader-clean"]["verdict"] == "NO_EVIDENCE" and v["trader-clean"]["n_correct"] < 40
-    frozen = await q(db, "compliance", "SELECT count(*) AS n FROM audit_result WHERE campaign_id=%s", (cid,))
-    assert frozen[0]["n"] == 3
+    frozen = await q(db, "compliance", "SELECT scope, count(*) AS n FROM audit_result WHERE campaign_id=%s GROUP BY 1 ORDER BY 1", (cid,))
+    assert [(r["scope"], r["n"]) for r in frozen] == [("AGENT", 3), ("CELL", 3)]
 
 
 async def test_clean_trader_uses_no_shared_channel(db):
@@ -195,8 +195,8 @@ async def test_cancelled_run_is_aborted_not_left_running(db):
 
 async def test_null_control_wall_audits_only_the_clean_trader(db):
     cid, _ = await run(db, planned_slots=16, design="ALL_ON", null_control=True)
-    rows = await q(db, "audit_engine", "SELECT a.agent_name, v.family_size FROM v_verdict v JOIN agent a ON a.agent_id=v.low_agent_id WHERE v.campaign_id=%s", (cid,))
-    assert [(r["agent_name"], r["family_size"]) for r in rows] == [("trader-clean", 1)]
+    rows = await q(db, "audit_engine", "SELECT a.agent_name, v.scope, v.family_size, v.n_agents FROM v_verdict v JOIN agent a ON a.agent_id=v.low_agent_id WHERE v.campaign_id=%s ORDER BY v.scope", (cid,))
+    assert [(r["agent_name"], r["scope"], r["family_size"], r["n_agents"]) for r in rows] == [("trader-clean", "AGENT", 1, 1), ("trader-clean", "CELL", 1, 1)]
 
 
 async def test_live_run_survives_early_reveal_requests_and_commits_well_ahead(db):
@@ -214,3 +214,129 @@ async def test_live_run_survives_early_reveal_requests_and_commits_well_ahead(db
     slots = await q(db, "audit_engine", "SELECT committed_at, lower(slot_period) AS st FROM canary_slot WHERE campaign_id=%s ORDER BY 2", (cid,))
     # commitments are published three slots ahead: from the 4th slot on, the margin is ~3 slot lengths (2.1 s)
     assert all((s["st"] - s["committed_at"]).total_seconds() > 1.4 for s in slots[3:]) and all((s["st"] - s["committed_at"]).total_seconds() > 0.3 for s in slots)
+
+
+# ----- v2: sequential stopping, slot-exact windows, signed snapshots -------------------------------------------------------------------
+def test_fixed_inference_refuses_an_early_stopping_rule():
+    with pytest.raises(ValueError, match="SEQUENTIAL"):
+        RunConfig(inference="FIXED", stop_rule="FIRST_LEAK").validate()
+
+
+async def _window(db, cid):
+    return (await q(db, "audit_engine", "SELECT c.started_at, c.closed_at, c.status, count(s.*) AS n, max(upper(s.slot_period)) AS last_end "
+                                        "FROM audit_campaign c LEFT JOIN canary_slot s ON s.campaign_id=c.campaign_id AND lower(s.slot_period) < c.closed_at "
+                                        "WHERE c.campaign_id=%s GROUP BY c.campaign_id", (cid,)))[0]
+
+
+async def test_sequential_first_leak_stops_at_a_block_boundary_and_freezes_signed(db):
+    from walltest import signing
+    ev = []
+    cfg = RunConfig(clock_mode="SIMULATED", seed=21, planned_slots=160, design="FULL_FACTORIAL", alpha=0.05, inference="SEQUENTIAL",
+                    stop_rule="FIRST_LEAK", trust={"trader-leaky": 1.0, "trader-partial": 1.0})
+    r = CampaignRunner(db, cfg, ev.append)
+    cid = await r.run()
+    assert r.stopped_early and r.slots_executed % 8 == 0 and 16 <= r.slots_executed < 160
+    w = await _window(db, cid)
+    assert w["status"] == "CLOSED" and w["n"] == r.slots_executed and w["closed_at"] == w["last_end"]      # slot-exact window
+    checks = [e for e in ev if e["type"] == "sequential_check"]
+    assert checks[-1]["stop"] and all(not c["stop"] for c in checks[:-1]) and checks[-1]["slots_done"] == r.slots_executed
+    # an e-value after every slot (watching is valid); slots already in flight past the stop point may report too, but are
+    # discarded: they lie after closed_at (checked above and in the sliding-window test)
+    assert sum(e["type"] == "evalues" for e in ev) >= r.slots_executed
+    res = await q(db, "audit_engine", "SELECT DISTINCT method, signature, signer_pubkey, snapshot_sha256 FROM audit_result WHERE campaign_id=%s", (cid,))
+    assert len(res) == 1 and res[0]["method"] == "ANYTIME_EVALUE_GATEKEEPING_v2"
+    msg = (await q(db, "audit_engine", "SELECT snapshot_message_frozen(%s) AS m", (cid,)))[0]["m"]
+    assert signing.verify(res[0]["signer_pubkey"], msg.encode(), res[0]["signature"]) and res[0]["signer_pubkey"] == signing.signer().public_hex
+    lk = (await q(db, "audit_engine", "SELECT r.verdict FROM audit_result r JOIN agent a ON a.agent_id=r.low_agent_id WHERE r.campaign_id=%s AND r.scope='AGENT' AND a.agent_name='trader-leaky'", (cid,)))[0]
+    assert lk["verdict"] == "LEAK"
+    frozen = r.snapshot["evidence_root"]
+    assert (await q(db, "audit_engine", "SELECT root FROM evidence_root(%s)", (cid,)))[0]["root"] == frozen          # recomputable after the fact
+
+
+async def test_sequential_all_settled_stops_once_every_agent_is_flagged_or_bounded_below_materiality(db):
+    cfg = RunConfig(clock_mode="SIMULATED", seed=22, planned_slots=200, design="ALL_ON", alpha=0.05, inference="SEQUENTIAL",
+                    stop_rule="ALL_SETTLED", materiality=0.9, trust={"trader-leaky": 1.0, "trader-partial": 0.0})
+    r = CampaignRunner(db, cfg, None)
+    cid = await r.run()
+    assert r.stopped_early
+    rows = {x["agent_name"]: x for x in await q(db, "audit_engine", "SELECT a.agent_name, r.verdict, r.acc_upper FROM audit_result r JOIN agent a ON a.agent_id=r.low_agent_id "
+                                                                    "WHERE r.campaign_id=%s AND r.scope='AGENT'", (cid,))}
+    assert rows["trader-leaky"]["verdict"] == "LEAK"
+    for name in ("trader-clean", "trader-partial"):                                    # trust 0: no leak, and its anytime upper bound is below 0.9
+        assert rows[name]["verdict"] == "NO_EVIDENCE" and rows[name]["acc_upper"] < 0.9
+
+
+async def test_live_sequential_stop_excludes_slots_committed_ahead(db):
+    """LIVE commits 3 slots ahead. When a sequential campaign stops early those slots exist, but lie outside the closed window:
+    they are not scored, not in the evidence, and the snapshot is still reproducible."""
+    cfg = RunConfig(clock_mode="LIVE", planned_slots=30, design="ALL_ON", slot_ms=500, alpha=0.05, seed=23, inference="SEQUENTIAL",
+                    stop_rule="FIRST_LEAK", trust={"trader-leaky": 1.0, "trader-partial": 1.0})
+    r = CampaignRunner(db, cfg, None)
+    cid = await r.run()
+    assert r.stopped_early and r.slots_executed < 30
+    allslots = (await q(db, "audit_engine", "SELECT count(*) AS n FROM canary_slot WHERE campaign_id=%s", (cid,)))[0]["n"]
+    w = await _window(db, cid)
+    assert allslots > w["n"] == r.slots_executed and w["closed_at"] == w["last_end"]
+    scored = (await q(db, "audit_engine", "SELECT count(DISTINCT slot_id) AS n FROM v_slot_score WHERE campaign_id=%s", (cid,)))[0]["n"]
+    assert scored == r.slots_executed
+    ok = await q(db, "audit_engine", "SELECT bool_and(hash_ok) AS ok FROM v_result_integrity WHERE campaign_id=%s", (cid,))
+    assert ok[0]["ok"]
+    assert (await q(db, "audit_engine", "SELECT root FROM evidence_root(%s)", (cid,)))[0]["root"] == r.snapshot["evidence_root"]
+
+
+async def test_commit_modes_slot_work_is_asynchronous_verdicts_are_durable(db):
+    async with db.session("wt_agent_trader_leaky") as c:
+        assert (await (await c.execute("SHOW synchronous_commit")).fetchone())["synchronous_commit"] == "off"
+    async with db.session("audit_engine", durable=False) as c:
+        assert (await (await c.execute("SHOW synchronous_commit")).fetchone())["synchronous_commit"] == "off"
+    for role in ("audit_engine", "compliance"):                                      # the freeze and everything else: durable
+        async with db.session(role) as c:
+            assert (await (await c.execute("SHOW synchronous_commit")).fetchone())["synchronous_commit"] == "on"
+
+
+async def test_orphaned_campaigns_are_aborted_at_startup(db, enginedb):
+    """A process that dies mid-campaign leaves it RUNNING (and its wall blocked). The next start aborts it: never scored."""
+    from walltest.runs import recover_orphaned_campaigns
+    rows = await q(db, "compliance", "SELECT wall_id FROM info_wall WHERE wall_name LIKE 'WALL-0%%'")
+    uid = (await q(db, "compliance", "SELECT user_id FROM app_user WHERE user_role='COMPLIANCE' LIMIT 1"))[0]["user_id"]
+    cid = (await q(db, "compliance", "SELECT create_campaign(%s,%s,0.05,4,'ALL_ON','SIMULATED','{}'::jsonb) AS c", (rows[0]["wall_id"], uid)))[0]["c"]
+    await q(db, "audit_engine", "SELECT start_campaign(%s)", (cid,))
+    assert cid in await recover_orphaned_campaigns(db)
+    assert (await q(db, "audit_engine", "SELECT status FROM audit_campaign WHERE campaign_id=%s", (cid,)))[0]["status"] == "ABORTED"
+    assert await recover_orphaned_campaigns(db) == []
+
+
+async def test_a_failing_slot_aborts_the_campaign_instead_of_hanging(db, monkeypatch):
+    """Regression for the sliding window: a slot that raises must surface as an error (campaign ABORTED), never a deadlock."""
+    cfg = RunConfig(clock_mode="SIMULATED", seed=31, planned_slots=40, design="FULL_FACTORIAL", concurrency=4, inference="SEQUENTIAL",
+                    stop_rule="FIRST_LEAK", trust={"trader-leaky": 0.0, "trader-partial": 0.0})
+    r = CampaignRunner(db, cfg, None)
+    real = r._finalize_slot
+    async def boom(info):
+        if info["index"] == 13:
+            raise RuntimeError("injected failure")
+        return await real(info)
+    monkeypatch.setattr(r, "_finalize_slot", boom)
+    with pytest.raises(RuntimeError, match="injected"):
+        await asyncio.wait_for(r.run(), timeout=60)
+    assert (await q(db, "audit_engine", "SELECT status FROM audit_campaign WHERE campaign_id=%s", (r.cid,)))[0]["status"] == "ABORTED"
+
+
+async def test_sliding_window_sequential_stop_is_exact_at_the_block_boundary(db):
+    """With 8 slots in flight, slots of later blocks have started when the stop fires: they must not change the window,
+    the scores or the evidence."""
+    cfg = RunConfig(clock_mode="SIMULATED", seed=32, planned_slots=160, design="FULL_FACTORIAL", concurrency=8, inference="SEQUENTIAL",
+                    stop_rule="FIRST_LEAK", trust={"trader-leaky": 1.0, "trader-partial": 1.0})
+    ev = []
+    r = CampaignRunner(db, cfg, ev.append)
+    cid = await r.run()
+    assert r.stopped_early and r.slots_executed % 8 == 0
+    w = await _window(db, cid)
+    assert w["n"] == r.slots_executed and w["closed_at"] == w["last_end"]
+    scored = (await q(db, "audit_engine", "SELECT count(DISTINCT slot_id) AS n FROM v_slot_score WHERE campaign_id=%s", (cid,)))[0]["n"]
+    assert scored == r.slots_executed
+    frozen = (await q(db, "audit_engine", "SELECT max(n_slots) AS n FROM audit_result WHERE campaign_id=%s AND scope='AGENT'", (cid,)))[0]["n"]
+    assert frozen == r.slots_executed
+    stop_check = [e for e in ev if e["type"] == "sequential_check" and e["stop"]][0]
+    assert stop_check["slots_done"] == r.slots_executed and all(a["n_slots"] == r.slots_executed for a in stop_check["agents"])
+    assert (await q(db, "audit_engine", "SELECT root FROM evidence_root(%s)", (cid,)))[0]["root"] == r.snapshot["evidence_root"]

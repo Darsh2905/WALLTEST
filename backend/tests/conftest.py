@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import json
 import os
 import secrets
 import sys
@@ -76,6 +77,17 @@ def as_role(conn, role, sql, params=None):
     return rows
 
 
+def dicts_as(conn, role, sql, params=None) -> list[dict]:
+    """as_role, but rows come back as dicts keyed by the cursor's column names (never by position)."""
+    with conn.transaction():
+        conn.execute(f"SET LOCAL ROLE {role}")
+        cur = conn.execute(sql, params)
+        cols = [d.name for d in cur.description]
+        rows = [dict(zip(cols, r)) for r in cur.fetchall()]
+        conn.execute("RESET ROLE")
+    return rows
+
+
 class Fx:
     """Builds small campaigns directly in SQL (inside the test transaction)."""
     BASE = dt.datetime(2020, 6, 1, tzinfo=UTC)          # tests use mid-2020; the engine uses 2021+, so windows never collide
@@ -90,11 +102,13 @@ class Fx:
         self.upsi = conn.execute("SELECT upsi_id, isin FROM upsi_item ORDER BY upsi_id").fetchall()
         self._offset = 0
 
-    def campaign(self, planned=2, design="ALL_ON", clock="SIMULATED", wall=None, alpha=0.05, start=True):
-        cid = one(self.c, "SELECT create_campaign(%s,%s,%s::numeric,%s,%s,%s,'{}'::jsonb)",
-                  (wall or self.wall1, self.user, alpha, planned, design, clock))
+    def campaign(self, planned=2, design="ALL_ON", clock="SIMULATED", wall=None, alpha=0.05, start=True, config=None, started_at=None):
+        """config: audit_campaign.config (e.g. {"inference": "SEQUENTIAL"}). started_at: the evidence window's start (fixture slots
+        are in 2020, so evidence tests pass Fx.BASE; the default is the server clock, as in v1)."""
+        cid = one(self.c, "SELECT create_campaign(%s,%s,%s::numeric,%s,%s,%s,%s::jsonb)",
+                  (wall or self.wall1, self.user, alpha, planned, design, clock, json.dumps(config or {})))
         if start:
-            self.c.execute("SELECT start_campaign(%s)", (cid,))
+            self.c.execute("SELECT start_campaign(%s, coalesce(%s, clock_timestamp()))", (cid, started_at))
         return cid
 
     def treatments(self, cid):

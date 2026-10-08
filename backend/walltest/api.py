@@ -18,7 +18,7 @@ from . import config, defaults, lab
 from .db import Database
 from .engine import RunConfig
 from .queries import Q, sql_meta
-from .runs import Busy, RunManager
+from .runs import Busy, RunManager, recover_orphaned_campaigns
 
 if sys.platform == "win32":  # psycopg's async API cannot use the default Proactor loop
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
@@ -56,6 +56,7 @@ def create_app(dbname: str | None = None, enable_lab: bool = True) -> FastAPI:
         db = Database(config.api_dsn(dbname), min_size=2, max_size=20)
         await db.open()
         state["db"] = db
+        state["recovered"] = await recover_orphaned_campaigns(db)
         state["runs"] = RunManager(db)
         yield
         if state["runs"].running:

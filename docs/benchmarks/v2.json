@@ -1,0 +1,40 @@
+{
+ "label": "v2",
+ "when": "2026-10-08 21:07:55",
+ "engine": {
+  "sim_slots_per_s_conc1": 80.0,
+  "sim_slots_per_s_conc8": 161.2
+ },
+ "queries": {
+  "rows": {
+   "access_event": 1056800,
+   "agent_note": 398400,
+   "audit_result": 10400,
+   "canary_slot": 115200,
+   "canary_variant": 230400,
+   "sealed_flip": 115200,
+   "trade_order": 1484800
+  },
+  "v_verdict_one_campaign_ms": 21.12,
+  "v_slot_score_one_slot_ms": 0.3,
+  "v_progress_one_campaign_ms": 2.84,
+  "exposure_trail_ms": 0.7,
+  "v_lag_one_campaign_ms": 2.32,
+  "access_event_time_window_count_ms": 0.17,
+  "knn_all_vector_memory_ms": 55.31,
+  "v_wall_verdict_one_campaign_ms": 23.46,
+  "evidence_root_one_campaign_ms": 33.74,
+  "semantic_search_ms": 16.52,
+  "semantic_search_bruteforce_ms": 250.18,
+  "semantic_search_equals_bruteforce": "25/25"
+ },
+ "kernels": {
+  "binom_upper_p_1543_ms": 0.44,
+  "clopper_pearson_lower_1543_ms": 0.42,
+  "min_detectable_acc_1500_ms": 0.66,
+  "n_required_exact_055_ms": 156.68,
+  "clopper_pearson_upper_1543_ms": 0.5,
+  "cs_lower_1543_ms": 0.59,
+  "log_evalue_mix_1543_ms": 0.5
+ }
+}

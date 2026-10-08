@@ -1,0 +1,32 @@
+{
+ "label": "v1-baseline",
+ "when": "2026-10-08 19:57:40",
+ "engine": {
+  "sim_slots_per_s_conc1": 67.2,
+  "sim_slots_per_s_conc8": 181.1
+ },
+ "queries": {
+  "rows": {
+   "access_event": 1056800,
+   "agent_note": 398400,
+   "audit_result": 10400,
+   "canary_slot": 115200,
+   "canary_variant": 230400,
+   "sealed_flip": 115200,
+   "trade_order": 1484800
+  },
+  "v_verdict_one_campaign_ms": 1363.82,
+  "v_slot_score_one_slot_ms": 0.28,
+  "v_progress_one_campaign_ms": 2.73,
+  "exposure_trail_ms": 188.2,
+  "v_lag_one_campaign_ms": 2.07,
+  "access_event_time_window_count_ms": 25.65,
+  "knn_all_vector_memory_ms": 46.99
+ },
+ "kernels": {
+  "binom_upper_p_1543_ms": 0.63,
+  "clopper_pearson_lower_1543_ms": 11.4,
+  "min_detectable_acc_1500_ms": 10.09,
+  "n_required_exact_055_ms": 227.33
+ }
+}

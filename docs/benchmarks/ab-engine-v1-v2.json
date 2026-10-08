@@ -1,0 +1,55 @@
+{
+ "label": "ab-engine-v1-v2",
+ "baseline_ref": "HEAD (6bf0cb3, v1)",
+ "metric": "simulated slots per second, 152-slot 2x2x2 factorial",
+ "results": {
+  "baseline_conc1": {
+   "median": 71.1,
+   "min": 71.0,
+   "max": 71.7,
+   "runs": [
+    71.1,
+    71.7,
+    71.5,
+    71.0,
+    71.0
+   ]
+  },
+  "baseline_conc8": {
+   "median": 166.9,
+   "min": 157.9,
+   "max": 173.1,
+   "runs": [
+    157.9,
+    165.4,
+    166.9,
+    172.4,
+    173.1
+   ]
+  },
+  "working_tree_conc1": {
+   "median": 85.0,
+   "min": 84.3,
+   "max": 88.6,
+   "runs": [
+    88.6,
+    85.0,
+    84.3,
+    85.7,
+    84.3
+   ]
+  },
+  "working_tree_conc8": {
+   "median": 179.2,
+   "min": 164.0,
+   "max": 189.2,
+   "runs": [
+    177.7,
+    164.0,
+    182.0,
+    189.2,
+    179.2
+   ]
+  }
+ }
+}

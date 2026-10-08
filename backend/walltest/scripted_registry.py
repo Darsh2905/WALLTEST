@@ -18,6 +18,6 @@ def build_traders(low_agents: list[dict], cfg, seed: int) -> list[TraderSpec]:
             raise ValueError(f"no scripted behaviour for model {a['model_name']!r}")
         trust = float(cfg.trust.get(a["agent_name"], 0.0)) if b in ("leaky", "partial") else 0.0
         channels = {"leaky": ALL_CHANNELS, "partial": (cfg.partial_channel,), "clean": (), "llm": ALL_CHANNELS}[b]
-        out.append(TraderSpec(a["agent_name"], a["agent_id"], b, trust, channels, random.Random(f"{a['agent_name']}:{seed}"),
+        out.append(TraderSpec(a["agent_name"], a["agent_id"], b, a["db_role"], trust, channels, random.Random(f"{a['agent_name']}:{seed}"),
                               decider=LLMDecider() if b == "llm" else None))
     return out

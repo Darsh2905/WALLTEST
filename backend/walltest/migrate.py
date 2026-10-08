@@ -8,7 +8,7 @@ import sys
 import psycopg
 from psycopg import sql
 
-from . import config
+from . import config, roles
 
 
 def create_database_if_missing(name: str) -> None:
@@ -56,6 +56,8 @@ def migrate(dbname: str | None = None, verbose: bool = True) -> list[str]:
             if verbose:
                 print(f"applied {f.name}")
         set_passwords(conn)
+        with conn.transaction():          # per-agent roles (015) for agents seeded before the migration; no-op on an empty DB
+            roles.provision(conn)
     return applied
 
 

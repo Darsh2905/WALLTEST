@@ -61,7 +61,8 @@ async def test_prompt_contains_only_retrieved_notes_and_a_rule_following_stub_is
     assert not all(v["trader-clean"][0] for v in by.values())
     for p in prompts:                                                                           # the model never sees the flip, variants or slot
         assert "salt" not in p.lower() and "flip" not in p.lower() and "canary" not in p.lower() and "WALLTEST-v1" not in p
-    assert (await db.fetch("audit_engine", "SELECT count(*) AS n FROM audit_result WHERE campaign_id=%s", (cid,)))[0]["n"] == 2
+    frozen = await db.fetch("audit_engine", "SELECT scope, count(*) AS n FROM audit_result WHERE campaign_id=%s GROUP BY 1 ORDER BY 1", (cid,))
+    assert [(r["scope"], r["n"]) for r in frozen] == [("AGENT", 2), ("CELL", 2)]                 # 2 LOW agents x (pooled + 1 cell)
 
 
 @pytest.mark.parametrize("behaviour", ["raises", "garbage", "wrong_isin"])
