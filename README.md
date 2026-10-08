@@ -99,7 +99,36 @@ cd frontend && npm test                                         # browser commit
 make e2e                                                        # Playwright: drives a LIVE campaign through the UI (~3 min)
 make calibrate                                                  # >= 2,000 null campaigns through the real engine (~8 min)
 ```
-RESULTS_PLACEHOLDER
+| Suite | What it proves | Result |
+|---|---|---|
+| `tests/test_schema.py`, `test_constraints.py` (30) | exactly 20 relations; keys, composite FKs, exclusion constraint, every domain / row / format CHECK, 1:2 and 1:1 cardinalities, SDD two-sharer rule: each negative test shows the real Postgres error | pass |
+| `test_append_only.py` (14), `test_commitment.py` (16), `test_wall.py` (8) | append-only (trigger layer *and* revoked privileges, UPDATE/DELETE/TRUNCATE); commitment known-answer vector, SQL ≡ Python on 300 random inputs, microsecond sensitivity, commit-before-expose; the wall trigger and its two bypasses; grant review | pass |
+| `test_roles_rls.py` (24) | `walltest_api` is not superuser / not owner / cannot `SET ROLE` the owner; `low_side` cannot read `upsi_item` (privilege layer, RLS second layer, and **through the API path**); sealed flips invisible until the slot ends | pass |
+| `test_gateway.py` (23) | active-grant windows (`valid_from` inclusive, `valid_to` exclusive), per-channel treatment flags on reads *and* writes, denied attempts logged without raising, wrong side, slot-scoped memory, kNN, pinned `search_path` on every `SECURITY DEFINER` function | pass |
+| `test_stats.py` (103) | SQL `binom_upper_p` vs `scipy.stats.binom` (grid incl. **n = 1,543**, underflow cases), Clopper–Pearson vs scipy and statsmodels (+ exact duality with the test), Holm vs statsmodels (ties, zeros), exact power / MDA vs scipy, the proposal's table | pass |
+| `test_verdict.py` (11), `test_engine.py` (11), `test_lab.py` (13), `test_api.py` (13), `test_llm_agent.py` (6) | scoring rule, **no peeking**, Holm in `v_verdict` ≡ statsmodels, frozen snapshots + tamper detection; real engine runs (balanced blocks, independent variant bits, verified commitments, LIVE commit-before-expose, abort on cancel); Rules Lab leaves no trace; API + SSE; LLM plumbing with a stub | pass |
+| **pytest total** | | **272 passed** |
+| `frontend/tests/commitment.test.ts` (5) | browser SHA-256 (WebCrypto and the pure-JS fallback) equals Python `hashlib` on the shared known-answer vector | **5 passed** |
+| `backend/e2e_tests` (Playwright, 14) | honesty badges on every page; the Power page recomputes 94/384/1,543 (+ exact 95/386/1,551); all 10 Rules Lab cases show Postgres's error text; a **Show SQL** drawer on every page; theme toggle; schema page lists 20 tables; a real **152-slot LIVE campaign driven through the UI**: pulses cross the gates, switched-off gates hatched, denied attempts stop at the gate, sealed → committed → revealed seen on the timeline, the verdict **withheld** while running; then **leaky = LEAK, clean = NO EVIDENCE (0 of 8 cells flagged), partial → leak only in vector-memory cells and a +0.45 vector main effect**; the browser verifies **152 of 152** commitments and each *tamper* button fails visibly; compliance reports; the **null-control** button; screenshots of every page at 1440×900 and 1366×768 in light and dark (no console errors, no horizontal overflow) | **14 passed** |
+| `scripts/calibrate.py` | below | **PASS** |
+| Fresh clone | `git clone` into a new directory, `docker compose up --build` using only this README → healthy, migrated, seeded, a 152-slot simulated campaign produced exactly the predicted pattern (leaky LEAK in 7 cells, partial in its 4 vector-on cells, clean 0 of 8) | **works** |
+
+### Calibration (`docs/calibration_report.md`, 914 s, 2,500 campaigns through the real engine, gateway, RLS and views)
+
+| Scenario | Result |
+|---|---|
+| **A: 2,000 null campaigns** (null-control wall, 40 slots, K = 1) | α = 0.05: **86 false alarms = 4.30%** (exact size of the discrete test 4.03%) · α = 0.001: **0 of 2,000** (exact size 0.034%) |
+| **B: 400 null campaigns** (full wall, trust 0, 5 cells × 10 slots, Holm over K = 15) | α = 0.05: **2 = 0.5%** · α = 0.001: **0** |
+| Independence | the price-only clean trader pools to **40,190 / 80,000 = 0.5024** correct (p = 0.18 vs ½): the canary direction is independent of prices |
+| **C: 100 campaigns at the demo default** (152 slots, trust 0.9) | P(every truly-leaky cell flagged) = **0.850** vs the Monte-Carlo prediction 0.859; P(leaky all-on flagged) = 0.970. False alarms on null cells in 6/100 campaigns vs 3.1% predicted (1.7 SD high, within noise at n = 100; Holm's guarantee ≤ α = 0.05 is theoretical and distribution-free) |
+
+Statistical honesty: the exact binomial test is discrete, so its true size (4.0% at n = 40) sits below α; the observed rates match those sizes within Monte-Carlo error. The proposal's own scale claim is reported as measured: 1,500 slots give **77.4%** power at 55% accuracy and α = 0.001 (minimum detectable accuracy 0.551), not a full 80%.
+
+### Optional LLM agent (stretch, off by default)
+`WALLTEST_LLM=1 ANTHROPIC_API_KEY=… python scripts/demo.py` seeds a second wall (`WALL-2`: research + an LLM-backed `trader-llm` + the clean baseline) and shows an opt-in checkbox on the Run page.
+The agent sees **only** the note texts the gateway returned (never the flip or variants) and answers `BUY <ISIN>`, `SELL <ISIN>` or `HOLD`; errors or unparseable replies fall back to the momentum rule. It has no planted behaviour: whatever it does is reported as measured and was **not tuned**
+(no prompt iteration against any verdict). Only its plumbing is tested (`test_llm_agent.py`, with a stub model); no API call was made in this build, so **no real-model result is reported here**.
+
 
 ## Repository layout
 

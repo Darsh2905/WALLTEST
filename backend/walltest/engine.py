@@ -13,6 +13,8 @@ from __future__ import annotations
 
 import asyncio
 import datetime as dt
+
+import psycopg.errors
 import random
 import secrets
 from dataclasses import dataclass, field
@@ -37,6 +39,7 @@ class RunConfig:
     clock_mode: str = "LIVE"                # LIVE | SIMULATED
     slot_ms: int = 1000                     # LIVE slot length
     null_control: bool = False              # audit WALL-0 (clean trader only)
+    llm_wall: bool = False                  # audit WALL-2 (optional LLM trader + the clean baseline); needs WALLTEST_LLM=1 at seed time
     wall_name: str | None = None            # audit this wall instead (used by the calibration harness: one wall per worker)
     trust: dict = field(default_factory=lambda: {"trader-leaky": 0.9, "trader-partial": 0.9})
     partial_channel: str = "vector_memory"
@@ -95,11 +98,14 @@ class CampaignRunner:
         self._last_event_id = 0
         self._last_order_id = 0
         self._stop = False
+        self.finalize_margin = 0.03              # seconds after the slot's end at which the engine first asks for the reveal
+        self.commit_lead_slots = 3               # LIVE: commitments are published this many slots ahead (tolerates a stall of ~2 slots)
+        self.reveal_retries = 0
 
     # ------------------------------------------------------------------------------------------------ setup
     async def _setup(self) -> None:
         cfg = self.cfg
-        wall_name = cfg.wall_name or ("WALL-0 Null control (clean trader only)" if cfg.null_control else "WALL-1 Research | Trading")
+        wall_name = cfg.wall_name or ("WALL-2 Research | LLM trader" if cfg.llm_wall else "WALL-0 Null control (clean trader only)" if cfg.null_control else "WALL-1 Research | Trading")
         async with self.db.session("compliance") as c:
             self.wall_id = (await (await c.execute("SELECT wall_id FROM info_wall WHERE wall_name=%s", (wall_name,))).fetchone())["wall_id"]
             self.wall_name = wall_name
@@ -193,9 +199,22 @@ class CampaignRunner:
             await asyncio.sleep(delay)
 
     # ------------------------------------------------------------------------------------------------ reveal + score
+    async def _reveal(self, slot_id: int) -> dict:
+        """Ask the DATABASE for the reveal. Row-level security (not the engine's own clock estimate) decides when a slot has ended:
+        if the engine asks a few ms early (clock-offset estimate error, a loaded machine) the DB answers WT006 and we simply retry."""
+        for attempt in range(80):
+            try:
+                async with self.db.session("audit_engine") as conn:
+                    return await (await conn.execute("SELECT * FROM engine_reveal(%s)", (slot_id,))).fetchone()
+            except psycopg.errors.Error as e:
+                if getattr(e, "sqlstate", None) != "WT006" or attempt == 79:
+                    raise
+                self.reveal_retries += 1
+                await asyncio.sleep(0.05)
+
     async def _finalize_slot(self, info: dict) -> None:
+        rv = await self._reveal(info["slot_id"])
         async with self.db.session("audit_engine") as conn:
-            rv = await (await conn.execute("SELECT * FROM engine_reveal(%s)", (info["slot_id"],))).fetchone()
             sc = await (await conn.execute(
                 "SELECT a.agent_name, s.guess_direction, s.true_direction, s.correct, s.net_position "
                 "FROM v_slot_score s JOIN agent a ON a.agent_id = s.low_agent_id WHERE s.slot_id=%s ORDER BY a.agent_name", (info["slot_id"],))).fetchall()
@@ -258,6 +277,11 @@ class CampaignRunner:
             t0 = SIM_EPOCH + dt.timedelta(hours=2 * self.cid)
         else:
             t0 = db_now + dt.timedelta(seconds=1.5)
+            # one audit clock per firm: a cancelled run may have left up to `commit_lead_slots` committed future slots; start after them
+            async with self.db.session("audit_engine") as conn:
+                last_end = (await (await conn.execute("SELECT max(upper(slot_period)) AS e FROM canary_slot")).fetchone())["e"]
+            if last_end is not None and last_end + dt.timedelta(seconds=0.05) > t0:
+                t0 = last_end + dt.timedelta(seconds=0.05)
         async with self.db.session("audit_engine") as conn:
             await conn.execute("SELECT start_campaign(%s,%s)", (self.cid, t0 if sim else db_now))
         self.emit({"type": "campaign_started", "campaign_id": self.cid, "t0": t0.isoformat()})
@@ -295,18 +319,25 @@ class CampaignRunner:
     async def _run_live(self, t0: dt.datetime, L: float) -> None:
         N = self.cfg.planned_slots
         infos: dict[int, dict] = {}
-        infos[0] = await self._commit_slot(0, t0, t0 + dt.timedelta(seconds=L), None)
+        committed = -1
+
+        async def commit_upto(k: int) -> None:                    # publish commitments `commit_lead_slots` ahead of the slot being run
+            nonlocal committed
+            while committed < min(N - 1, k):
+                committed += 1
+                s0 = t0 + dt.timedelta(seconds=committed * L)
+                infos[committed] = await self._commit_slot(committed, s0, s0 + dt.timedelta(seconds=L), None)
+
+        await commit_upto(self.commit_lead_slots - 1)
         fin: list[asyncio.Task] = []
         for i in range(N):
             start = t0 + dt.timedelta(seconds=i * L)
             await self._sleep_until(start - dt.timedelta(seconds=0.02), False)
-            if i + 1 < N:                                          # publish the NEXT commitment during this slot
-                nxt = start + dt.timedelta(seconds=L)
-                infos[i + 1] = await self._commit_slot(i + 1, nxt, nxt + dt.timedelta(seconds=L), None)
+            await commit_upto(i + self.commit_lead_slots)
             await self._sleep_until(start, False)
             self.emit({"type": "slot_open", "slot_id": infos[i]["slot_id"], "index": i})
             await self._agents(start, False, (0.12, 0.40), L)
-            await self._sleep_until(start + dt.timedelta(seconds=L + 0.03), False)
+            await self._sleep_until(start + dt.timedelta(seconds=L + self.finalize_margin), False)
             fin.append(asyncio.create_task(self._finalize_slot(infos[i])))
         await asyncio.gather(*fin)
 

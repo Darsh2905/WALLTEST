@@ -67,8 +67,12 @@ def luhn_isin_ok(isin: str) -> bool:
 
 
 def nse_isins(symbols: list[str]) -> dict[str, dict]:
-    n50 = list(csv.DictReader(io.StringIO(get(NIFTY50_URL).text)))
-    eq = list(csv.DictReader(io.StringIO(get(EQUITY_L_URL).text)))
+    n50_text, eq_text = get(NIFTY50_URL).text, get(EQUITY_L_URL).text
+    (OUT_DIR / "isin_sources").mkdir(parents=True, exist_ok=True)           # keep the evidence next to the data
+    (OUT_DIR / "isin_sources" / "ind_nifty50list.csv").write_text(n50_text)
+    (OUT_DIR / "isin_sources" / "EQUITY_L.csv").write_text(eq_text)
+    n50 = list(csv.DictReader(io.StringIO(n50_text)))
+    eq = list(csv.DictReader(io.StringIO(eq_text)))
     eq_isin = {r["SYMBOL"].strip(): r[" ISIN NUMBER"].strip() for r in eq if r.get(" ISIN NUMBER")}
     by_sym = {r["Symbol"].strip(): r for r in n50}
     out: dict[str, dict] = {}

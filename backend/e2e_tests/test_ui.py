@@ -219,20 +219,8 @@ def test_compliance_reports_for_the_live_campaign(live):
     expect(page.get_by_text("median (ms)").first).to_be_visible(timeout=10000)
 
 
-def test_null_control_button_demonstrates_false_alarm_control(live):
-    page, _ = live
-    goto(page, "/")
-    page.click("[data-testid=run-null]")
-    expect(page.get_by_role("button", name="Stop run")).to_be_visible(timeout=15000)
-    expect(page.get_by_role("button", name="Run live audit")).to_be_visible(timeout=120000)
-    page.wait_for_timeout(2500)
-    expect(page.locator("[data-testid=verdict-card-trader-clean]")).to_have_attribute("data-verdict", "NO_EVIDENCE", timeout=15000)
-    assert page.locator("[data-testid^=verdict-card-]").count() == 1
-    assert page.errors == []
-
-
 def test_screenshots_every_page_both_viewports(live, browser, base_url):
-    """Written to docs/screenshots/ (looked at, and fixed, during development). Also asserts no console errors and no horizontal overflow."""
+    """Runs BEFORE the null-control test so the screenshots show the headline factorial campaign. Written to docs/screenshots/ (looked at, and fixed, during development). Also asserts no console errors and no horizontal overflow."""
     for vp, (w, h) in {"1440x900": (1440, 900), "1366x768": (1366, 768)}.items():
         for theme in ("light", "dark"):
             ctx = browser.new_context(viewport={"width": w, "height": h}, color_scheme=theme)
@@ -254,3 +242,15 @@ def test_screenshots_every_page_both_viewports(live, browser, base_url):
                 pg.screenshot(path=str(d / f"{name}-{theme}.png"))
             assert errs == [], (vp, theme, errs[:3])
             ctx.close()
+
+
+def test_null_control_button_demonstrates_false_alarm_control(live):
+    page, _ = live
+    goto(page, "/")
+    page.click("[data-testid=run-null]")
+    expect(page.get_by_role("button", name="Stop run")).to_be_visible(timeout=15000)
+    expect(page.get_by_role("button", name="Run live audit")).to_be_visible(timeout=120000)
+    page.wait_for_timeout(2500)
+    expect(page.locator("[data-testid=verdict-card-trader-clean]")).to_have_attribute("data-verdict", "NO_EVIDENCE", timeout=15000)
+    assert page.locator("[data-testid^=verdict-card-]").count() == 1
+    assert page.errors == []

@@ -40,6 +40,7 @@ class RunRequest(BaseModel):
     clock_mode: str = "LIVE"
     slot_ms: int = 1000
     null_control: bool = False
+    llm: bool = False
     trust: dict[str, float] = Field(default_factory=dict)
     partial_channel: str = "vector_memory"
     channels: dict[str, str] = Field(default_factory=dict)
@@ -82,7 +83,8 @@ def create_app(dbname: str | None = None, enable_lab: bool = True) -> FastAPI:
         prov = pm["provenance"] or ""
         return {"prices": {**pm, "synthetic": prov.startswith("SYNTHETIC")},
                 "upsi_synthetic": True, "scripted_agents_are_validation_instruments": True,
-                "llm_enabled": config.LLM_ENABLED, "lab_enabled": enable_lab,
+                "llm_enabled": config.LLM_ENABLED, "llm_wall_present": bool(await state["db"].fetch("compliance", "SELECT 1 FROM info_wall WHERE wall_name LIKE 'WALL-2%'")),
+                "lab_enabled": enable_lab,
                 "status": state["runs"].status()}
 
     @app.get("/api/defaults")
@@ -181,7 +183,7 @@ def create_app(dbname: str | None = None, enable_lab: bool = True) -> FastAPI:
         trust = {"trader-leaky": 0.0, "trader-partial": 0.0, **req.trust}
         try:
             cfg = RunConfig(alpha=req.alpha, planned_slots=req.planned_slots, design=req.design, clock_mode=req.clock_mode,
-                            slot_ms=req.slot_ms, null_control=req.null_control, trust=trust, partial_channel=req.partial_channel, channels=req.channels,
+                            slot_ms=req.slot_ms, null_control=req.null_control, llm_wall=req.llm, trust=trust, partial_channel=req.partial_channel, channels=req.channels,
                             seed=req.seed, concurrency=max(1, min(8, req.sim_concurrency)))
             cfg.validate()
         except ValueError as e:

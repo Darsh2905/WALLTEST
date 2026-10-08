@@ -27,6 +27,8 @@ def main() -> None:
     print(f"migrations applied now: {applied or 'none (up to date)'}")
     seeded = seed.seed(verbose=False)
     print("seeded" if seeded else "already seeded")
+    if config.LLM_ENABLED:
+        seed.seed_llm()
 
 
 if __name__ == "__main__":

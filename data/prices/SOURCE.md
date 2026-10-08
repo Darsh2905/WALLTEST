@@ -15,3 +15,8 @@
 Securities: RELIANCE (INE002A01018), TCS (INE467B01029), HDFCBANK (INE040A01034), INFY (INE009A01021), ICICIBANK (INE090A01021), ITC (INE154A01025), SBIN (INE062A01020), LT (INE018A01030)
 
 Re-create with `python scripts/fetch_prices.py`. Nothing in this directory is mock data.
+
+## ISIN verification evidence
+The two NSE files the ISINs were checked against are kept verbatim in `isin_sources/` (downloaded 2026-10-08 together with the prices):
+`ind_nifty50list.csv` (official NIFTY 50 constituents, column `ISIN Code`) and `EQUITY_L.csv` (NSE equity master, column `ISIN NUMBER`).
+`scripts/fetch_prices.py` aborts if any symbol is missing from either file, if the two files disagree, or if an ISIN fails the ISO 6166 check digit.

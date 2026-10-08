@@ -9,7 +9,7 @@ import { cx, fmtAcc, fmtClock, fmtInt, fmtPct } from '../lib/format'
 type Mode = 'vary' | 'on' | 'off'
 interface Form {
   alpha: number; design: string; planned_slots: number; clock_mode: 'LIVE' | 'SIMULATED'; slot_ms: number; null_control: boolean
-  trustLeaky: number; trustPartial: number; partial_channel: string; channels: Record<string, Mode>; seed: string
+  trustLeaky: number; trustPartial: number; llm: boolean; partial_channel: string; channels: Record<string, Mode>; seed: string
 }
 const CH = ['vector_memory', 'notes_table', 'cache'] as const
 
@@ -23,6 +23,7 @@ function cellsOf(f: Form): number {
 export default function RunAudit() {
   const { state, start, cancel } = useRun()
   const defaults = useApi<any>('/api/defaults')
+  const meta = useApi<any>('/api/meta')
   const [form, setForm] = useState<Form | null>(null)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
@@ -31,11 +32,11 @@ export default function RunAudit() {
 
   function fromPreset(p: any): Form {
     return { alpha: p.alpha, design: p.design, planned_slots: p.planned_slots, clock_mode: p.clock_mode, slot_ms: p.slot_ms ?? 1000, null_control: !!p.null_control,
-             trustLeaky: p.trust?.['trader-leaky'] ?? 0.9, trustPartial: p.trust?.['trader-partial'] ?? 0.9, partial_channel: p.partial_channel ?? 'vector_memory',
+             trustLeaky: p.trust?.['trader-leaky'] ?? 0.9, trustPartial: p.trust?.['trader-partial'] ?? 0.9, llm: false, partial_channel: p.partial_channel ?? 'vector_memory',
              channels: { vector_memory: 'vary', notes_table: 'vary', cache: 'vary' }, seed: '' }
   }
   const cells = f ? cellsOf(f) : 1
-  const nLow = f?.null_control ? 1 : 3
+  const nLow = f?.null_control ? 1 : f?.llm ? 2 : 3
   const K = cells * nLow
   const perCell = f ? f.planned_slots / cells : 0
   const valid = !!f && Number.isInteger(perCell) && perCell >= 2 && f.planned_slots <= (f.clock_mode === 'SIMULATED' ? 3500 : 1000)
@@ -50,7 +51,7 @@ export default function RunAudit() {
     setBusy(true); setErr(null)
     try {
       const body: any = { alpha: f.alpha, planned_slots: f.planned_slots, design: f.design, clock_mode: f.clock_mode, slot_ms: f.slot_ms,
-        null_control: f.null_control, trust: { 'trader-leaky': f.trustLeaky, 'trader-partial': f.trustPartial }, partial_channel: f.partial_channel,
+        null_control: f.null_control, llm: f.llm, trust: { 'trader-leaky': f.trustLeaky, 'trader-partial': f.trustPartial }, partial_channel: f.partial_channel,
         channels: f.channels, seed: f.seed ? Number(f.seed) : null }
       await start(body)
     } catch (e: any) { setErr(e.message) } finally { setBusy(false) }
@@ -117,7 +118,10 @@ export default function RunAudit() {
                   <input type="range" min={0} max={1} step={0.05} className="w-full accent-[var(--steel)]" disabled={running || f.null_control} value={f.trustPartial} onChange={(e) => set({ trustPartial: Number(e.target.value) })} data-testid="trust-partial" /></label>
                 <label className="block"><span className="eyebrow">trader-partial reads only</span>
                   <select className="mt-1 w-full btn" disabled={running || f.null_control} value={f.partial_channel} onChange={(e) => set({ partial_channel: e.target.value })}><option value="vector_memory">vector memory</option><option value="notes_table">notes table</option><option value="feature_cache">cache</option></select></label>
-                <label className="flex items-center gap-2 mt-5"><input type="checkbox" className="w-4 h-4 accent-[var(--steel)]" disabled={running} checked={f.null_control} onChange={(e) => set({ null_control: e.target.checked })} data-testid="null-control" />
+                {meta.data?.llm_enabled && meta.data?.llm_wall_present && (
+                  <label className="flex items-start gap-2 col-span-2"><input type="checkbox" className="w-4 h-4 mt-0.5 accent-[var(--steel)]" disabled={running || f.null_control} checked={f.llm} onChange={(e) => set({ llm: e.target.checked })} data-testid="llm" />
+                    <span><span className="font-medium">Optional LLM trader</span> <span className="text-ink-3 text-[0.82rem]">own wall (WALL-2) with the clean baseline. No planted behaviour: whatever it does is reported as measured, never tuned. Needs an API key.</span></span></label>)}
+                <label className="flex items-center gap-2 mt-5"><input type="checkbox" className="w-4 h-4 accent-[var(--steel)]" disabled={running} checked={f.null_control} onChange={(e) => set({ null_control: e.target.checked, llm: e.target.checked ? false : f.llm })} data-testid="null-control" />
                   <span><span className="font-medium">Null control</span> <span className="text-ink-3 text-[0.82rem]">run only trader-clean</span></span></label>
               </div>
               <div className="flex items-center gap-3 pt-1">

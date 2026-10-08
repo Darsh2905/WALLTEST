@@ -197,3 +197,20 @@ async def test_null_control_wall_audits_only_the_clean_trader(db):
     cid, _ = await run(db, planned_slots=16, design="ALL_ON", null_control=True)
     rows = await q(db, "audit_engine", "SELECT a.agent_name, v.family_size FROM v_verdict v JOIN agent a ON a.agent_id=v.low_agent_id WHERE v.campaign_id=%s", (cid,))
     assert [(r["agent_name"], r["family_size"]) for r in rows] == [("trader-clean", 1)]
+
+
+async def test_live_run_survives_early_reveal_requests_and_commits_well_ahead(db):
+    """Regression (found by the Playwright run): a LIVE campaign was ABORTED because the engine asked for a reveal a few ms before the DB considered the
+    slot ended (clock-offset estimate error on a loaded machine). The DB is the authority: the engine must retry, not abort."""
+    cfg = RunConfig(clock_mode="LIVE", planned_slots=6, design="ALL_ON", slot_ms=700, alpha=0.05, seed=9, trust={"trader-leaky": 1.0, "trader-partial": 1.0})
+    r = CampaignRunner(db, cfg, None)
+    r.finalize_margin = -0.3                      # ask for every reveal 300 ms BEFORE the slot has ended
+    cid = await r.run()
+    assert r.reveal_retries > 0                    # the database refused (WT006) and the engine retried
+    st = (await q(db, "audit_engine", "SELECT status FROM audit_campaign WHERE campaign_id=%s", (cid,)))[0]["status"]
+    assert st == "CLOSED"
+    ok = await q(db, "audit_engine", "SELECT bool_and(commitment_ok) AS ok, count(*) AS n FROM v_slot_reveal WHERE campaign_id=%s", (cid,))
+    assert ok[0]["ok"] and ok[0]["n"] == 6
+    slots = await q(db, "audit_engine", "SELECT committed_at, lower(slot_period) AS st FROM canary_slot WHERE campaign_id=%s ORDER BY 2", (cid,))
+    # commitments are published three slots ahead: from the 4th slot on, the margin is ~3 slot lengths (2.1 s)
+    assert all((s["st"] - s["committed_at"]).total_seconds() > 1.4 for s in slots[3:]) and all((s["st"] - s["committed_at"]).total_seconds() > 0.3 for s in slots)

@@ -11,14 +11,17 @@ const GATES: { id: Gate; label: string[]; sub: string; y: number; flag: 'vector_
   { id: 'notes', label: ['NOTES', 'TABLE'], sub: 'agent_note', y: 162, flag: 'notes_table' },
   { id: 'cache', label: ['CACHE'], sub: 'cache', y: 262, flag: 'cache' },
 ]
-const TRADERS = [
-  { name: 'trader-leaky', y: 74 }, { name: 'trader-partial', y: 170 }, { name: 'trader-clean', y: 266 },
-]
+const ORDER = ['trader-leaky', 'trader-partial', 'trader-llm', 'trader-clean']
+const SLOT_Y = [74, 170, 266]
+function tradersFor(agents: string[] | null) {
+  const names = ORDER.filter((n) => (agents ? agents.includes(n) : n !== 'trader-llm'))
+  return names.map((name, i) => ({ name, y: SLOT_Y[i] }))
+}
 const WALL = { x: 452, w: 96 }
 const GATE = { x: 462, w: 76, h: 84 }
 const RESEARCH = { x: 232, y: 200 }
 
-function pulsePath(p: Pulse): string {
+function pulsePath(p: Pulse, TRADERS: { name: string; y: number }[]): string {
   const g = GATES.find((q) => q.id === p.gate)!
   const gy = g.y + GATE.h / 2
   if (p.kind === 'write') {
@@ -32,6 +35,7 @@ function pulsePath(p: Pulse): string {
 }
 
 export default function Hero({ state, grants }: { state: RunState; grants: any[] | null }) {
+  const TRADERS = useMemo(() => tradersFor(state.campaign ? state.campaign.agents : null), [state.campaign])
   const flags = state.openSlot?.channels ?? null
   const granted = useMemo(() => {
     const set = new Set<string>()
@@ -108,14 +112,14 @@ export default function Hero({ state, grants }: { state: RunState; grants: any[]
       <text x="704" y="42" fontSize="11" fontWeight="600" letterSpacing="1.4" fill="var(--ink-3)">LOW SIDE · PUBLIC AREA</text>
       {TRADERS.map((t) => {
         const a = state.agents[t.name]
-        const present = !state.campaign || t.name in (state.agents || {})
+        const present = true
         return (
           <g key={t.name} transform={`translate(700,${t.y + 0})`} opacity={present ? 1 : 0.35} data-agent={t.name}>
             <rect width="272" height="66" rx="8" fill="var(--surface)" stroke="var(--line)" />
             <rect x="0" y="0" width="5" height="66" rx="2.5" fill={AGENT_COLOR[t.name]} />
             <line x1="16" x2="42" y1="19" y2="19" stroke={AGENT_COLOR[t.name]} strokeWidth="2.5" strokeDasharray={AGENT_DASH[t.name]} strokeLinecap="round" />
             <text x="50" y="23" fontSize="13" fontWeight="600" fill="var(--ink)">{t.name}</text>
-            <text x="16" y="42" fontSize="10.5" fill="var(--ink-3)">{t.name === 'trader-clean' ? 'price momentum only · no channel' : t.name === 'trader-partial' ? 'reads one shared channel' : 'reads all three shared channels'}</text>
+            <text x="16" y="42" fontSize="10.5" fill="var(--ink-3)">{t.name === 'trader-clean' ? 'price momentum only · no channel' : t.name === 'trader-partial' ? 'reads one shared channel' : t.name === 'trader-llm' ? 'LLM agent · reads all three channels' : 'reads all three shared channels'}</text>
             <text x="16" y="58" fontSize="12" className="num" fill="var(--ink-2)">{a && a.n > 0 ? `${a.correct}/${a.n} correct${running ? ' so far' : ''} · ${fmtPct(a.correct / a.n, 0)}` : 'orders scored after each slot'}</text>
           </g>
         )
@@ -129,7 +133,7 @@ export default function Hero({ state, grants }: { state: RunState; grants: any[]
       {state.pulses.map((p) => (
         <g key={p.id} pointerEvents="none" data-pulse={p.gate} data-denied={p.denied ? '1' : '0'}>
           <circle r={p.denied ? 4 : 5} fill={p.denied ? 'var(--ink-3)' : 'var(--steel)'} filter={p.denied ? undefined : 'url(#glow)'}>
-            <animateMotion dur="0.85s" path={pulsePath(p)} fill="freeze" keyPoints="0;1" keyTimes="0;1" calcMode="linear" />
+            <animateMotion dur="0.85s" path={pulsePath(p, TRADERS)} fill="freeze" keyPoints="0;1" keyTimes="0;1" calcMode="linear" />
             <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;.12;.85;1" dur="1.1s" fill="freeze" />
           </circle>
         </g>

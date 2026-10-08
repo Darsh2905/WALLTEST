@@ -73,12 +73,13 @@ export interface VerdictsData {
   access_summary: { asset_name: string; op: string; outcome: string; n: number }[]; no_trade: { low_agent: string; n_no_trade: number; n_slots: number }[]; doc: string
 }
 
-export const AGENT_COLOR: Record<string, string> = { 'trader-leaky': 'var(--s-leaky)', 'trader-clean': 'var(--s-clean)', 'trader-partial': 'var(--s-partial)' }
-export const AGENT_DASH: Record<string, string> = { 'trader-leaky': '', 'trader-clean': '2 4', 'trader-partial': '7 3' }
+export const AGENT_COLOR: Record<string, string> = { 'trader-leaky': 'var(--s-leaky)', 'trader-clean': 'var(--s-clean)', 'trader-partial': 'var(--s-partial)', 'trader-llm': 'var(--ink)' }
+export const AGENT_DASH: Record<string, string> = { 'trader-leaky': '', 'trader-clean': '2 4', 'trader-partial': '7 3', 'trader-llm': '10 3 2 3' }
 export const AGENT_BLURB: Record<string, string> = {
   'trader-leaky': 'reads vector memory, notes and cache',
   'trader-partial': 'reads ONE channel (vector memory)',
   'trader-clean': 'price momentum only',
+  'trader-llm': 'optional LLM agent · not a validation instrument',
 }
 export const CHANNELS = ['vector_memory', 'notes_table', 'cache'] as const
 export const CHANNEL_LABEL: Record<string, string> = { vector_memory: 'Vector memory', notes_table: 'Notes table', cache: 'Cache', feature_cache: 'Cache', notes: 'Notes table', vector: 'Vector memory' }

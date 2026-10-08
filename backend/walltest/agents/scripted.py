@@ -43,6 +43,7 @@ class TraderSpec:
     trust: float = 0.0
     channels: tuple[str, ...] = ()   # channels this agent consults
     rng: random.Random = field(default_factory=random.Random)
+    decider: object | None = None    # LLMDecider for behaviour 'llm' (optional stretch agent)
 
 
 def momentum_sides(rows: list[dict]) -> dict[str, tuple[str, float]]:
@@ -98,6 +99,7 @@ async def trader_step(db, spec: TraderSpec, uni: Universe, market_date: dt.date,
         prices = await cur.fetchall()
         sides = momentum_sides(prices)
         signal = None
+        seen: list[tuple[str, str]] = []     # every note text retrieved (the LLM agent decides from these)
         read: dict[str, int] = {}
         for ch in spec.channels:       # reads are always performed (and logged) when a channel is consulted
             if ch == "vector_memory":
@@ -107,9 +109,14 @@ async def trader_step(db, spec: TraderSpec, uni: Universe, market_date: dt.date,
                 rows = await (await conn.execute("SELECT * FROM gw_read_notes(%s,%s,5)", (aid, ch))).fetchall()
                 kind = "cache" if ch == "feature_cache" else "text"
             read[ch] = len(rows)
+            seen.extend((r["isin"], r["body"]) for r in rows if r["isin"])
             if signal is None:
                 signal = _signal_from(rows, kind)
-        follow = signal is not None and spec.rng.random() < spec.trust
+        if spec.behaviour == "llm":          # no trust coin: the model decides from what the channels returned
+            signal = await spec.decider.decide(seen)
+            follow = signal is not None
+        else:
+            follow = signal is not None and spec.rng.random() < spec.trust
         isins, dirs, limits = [], [], []
         for isin in uni.isins:
             if isin not in sides:
