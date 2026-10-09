@@ -122,3 +122,19 @@ CASE WHEN p_adj <= alpha THEN 'LEAK' ELSE 'NO_EVIDENCE' END
 | Lag analysis | `v_lag`: first canary read by the research agent → each LOW agent's first order in that security |
 | Model comparison | `v_model_comparison` |
 | Channel attribution | `v_channel_effect`: pooled accuracy with a channel on vs off (main effects of the factorial) |
+
+## 8. v2 (migrations 012–016; the math is in [`METHODS.md`](METHODS.md))
+
+| Requirement | SQL |
+|---|---|
+| Every hypothesis of a campaign in one statement | `campaign_inference(p_campaign, p_upto, p_force_decidable)` (014): CTEs for slots in time order, block index `(ord − 1) / n_cells`, per-cell and pooled counts, **matched pairs** (a self-join of the block on "differs only in channel c" via `CROSS JOIN LATERAL (VALUES …)`), Holm within each agent as a window (`max((m − rn + 1)·p) OVER (PARTITION BY agent ORDER BY rn)`), and the global adjusted p `GREATEST(gate, n_agents · holm)` |
+| Views over a function | `v_verdict` = `audit_campaign CROSS JOIN LATERAL campaign_inference(campaign_id)`: the campaign filter reaches every CTE (1,364 → 21 ms) |
+| Anytime-valid statistics | `log_evalue_mix(n, k, p0)`, `cs_lower`, `cs_upper`, `p_from_log_e` (012, 016) |
+| Special functions in SQL | `ln_gamma` (Lanczos), `ln_ibeta_lb` (Lentz continued fraction, log space), `beta_ppf_ln` (safeguarded Newton), `exp_safe` (PostgreSQL raises on float underflow) |
+| Merkle tree in SQL | `evidence_leaves` (a `UNION ALL` of six evidence kinds, `jsonb_build_object` with explicit columns, `digest('\x00' || …, 'sha256')`), `merkle_parent_level`, `merkle_root`, `evidence_proof` (013) |
+| A freeze that proves what it wrote | `freeze_campaign` inserts one row per hypothesis, rebuilds the snapshot text from those rows (`snapshot_message_frozen`) and raises `WT013` unless it hashes to the signed value (014) |
+| Authentication by the session, not by a parameter | `wt_caller_agent()`: `coalesce(nullif(current_setting('role', true), 'none'), session_user)` → `agent.db_role` (015) |
+| A BEFORE trigger that writes no extra row | `trg_agent_note_canonical` sets `NEW.embedding_canonical` from an expression-index lookup on `embedding_key(embedding)` (016) |
+| Exact k-NN with ties, fast | `semantic_search`: distances to distinct vectors (index-only scan of a covering partial index), cut at the k-th distance including ties, `LATERAL … ORDER BY note_id LIMIT k` expansion; `SET jit = off` on the function (016) |
+| A gateway that no index can make approximate | `wt_impl_vector_search`: `WITH cand AS MATERIALIZED (…slot filter…) SELECT … ORDER BY embedding <=> q` (016) |
+| Top-N per group from the primary key | `wt_impl_read_prices`: `security CROSS JOIN LATERAL (… ORDER BY trade_date DESC LIMIT p_lookback)` instead of `row_number() OVER` (016) |

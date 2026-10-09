@@ -9,6 +9,23 @@ Leaks can only travel through shared channels (pgvector memory, notes table, cac
 > **Data honesty.** Prices are **real** NSE end-of-day bars for 8 NIFTY 50 stocks over 2 years ([`data/prices/SOURCE.md`](data/prices/SOURCE.md); every ISIN verified against NSE's own files and the ISO 6166 check digit).
 > UPSI items and canary texts are **synthetic**. The research / leaky / partial / clean agents are **scripted validation instruments with planted ground truth** (the UI says so on every page).
 
+## What's new in v2 (branch `v2`)
+
+v2 upgrades the inference, the security architecture and the performance, and measures each change against v1
+(`docs/METHODS.md`, `docs/calibration_v2_report.md`, `docs/benchmarks/`, the **Performance** page). Still exactly 20 tables, every statistic in SQL.
+
+| | v1 | v2 |
+|---|---|---|
+| **Verdict** | one Holm family over 24 cells × agents | **serial gatekeeping**: a pooled test per agent (all 152 slots) gates its cells and **channel tests**; one error budget for every claim. Weak-leak detection **49% vs 2.5%**; FWER over 36 claims 2.0% at α = 0.05 |
+| **Attribution** | descriptive main-effect bars | **exact matched-pair sign test** within randomised blocks: trader-partial → vector memory in 100% of campaigns, other channels ≤ 0.5% |
+| **Bounds** | lower bound only | **two-sided** accuracy and leakage-bits bounds: NO EVIDENCE says how much could leak at most |
+| **Peeking** | forbidden | still forbidden in FIXED mode; new **SEQUENTIAL** mode with anytime-valid **e-values**, confidence sequences and pre-registered early stopping: false alarms under continuous monitoring 0.7% vs 13.3% for naive peeking |
+| **Agent identity** | per-side roles; an agent id was a parameter | **every agent logs in as itself**; the gateway takes no id |
+| **Tamper evidence** | per-row hash (D-06) | **Merkle root over every evidence row + Ed25519-signed snapshot**, verified in the browser, with inclusion proofs |
+| **Speed** | | verdict 1,364 → 21 ms, exposure trail 188 → 0.7 ms, bounds 15–33× faster, exact paraphrase search 14 ms; engine +20% / +7% slots/s (interleaved A/B) |
+
+Two designs were measured and **rejected**, and the page shows why: HNSW (recall@10 0.70–0.91 on this embedding) and BRIN (one query 30× slower than a B-tree).
+
 ## Quick start (macOS, Linux, Windows)
 
 Prerequisite: **Docker** with the compose plugin (Docker Desktop on macOS/Windows; Docker Engine + compose plugin on Linux). Nothing else: Python, Node and PostgreSQL all run in containers.
@@ -24,7 +41,7 @@ python scripts/demo.py             # or:  make demo
 python scripts/demo.py --down      # stop
 python scripts/demo.py --reset     # stop and delete the database volume
 ```
-First start builds the images (a few minutes: Node build + Python deps); afterwards it starts in seconds. Ports: UI/API `8000`, PostgreSQL `5433` (change with `WALLTEST_PORT` / `WALLTEST_DB_PORT` in a `.env`).
+First start builds the images (a few minutes: Node build + Python deps); afterwards it starts in seconds. It also creates `./.keys/` (git-ignored): the engine's Ed25519 signing key and the agents' login master key, kept outside the database on purpose. Ports: UI/API `8000`, PostgreSQL `5433` (change with `WALLTEST_PORT` / `WALLTEST_DB_PORT` in a `.env`).
 The compose file's credentials are demo-only defaults for a local machine.
 
 ## The 3-minute demo script
@@ -41,7 +58,8 @@ The default campaign is a **live** 2×2×2 factorial of **152 one-second slots**
 | 1:45 | **Commit–reveal** | "The browser re-hashes every revealed slot (WebCrypto) and compares it with the commitment published before the slot opened. *Tamper* flips one bit and fails visibly." |
 | 2:15 | **Power** | "The proposal's table (94 / 384 / 1,543) is the normal approximation; the exact binomial needs 95 / 386 / 1,551." |
 | 2:40 | back to **Wall** | "Verdicts appear only now. The leaky agent: LEAK. The partial agent: LEAK. The price-only clean agent: NO EVIDENCE, and that is not 'proven clean': the card shows the minimum detectable accuracy." |
-| 2:50 | **Verdicts** | "Holm-adjusted p over 24 tests, Clopper–Pearson lower bound, bits. The factorial grid: the partial agent leaks only in cells where vector memory is on; the leaky agent reads all three channels, so only switching *all* off removes its leak." |
+| 2:50 | **Verdicts** | "Step 1, the gate: one pooled test per agent over all 152 slots, at α/3 each. Step 2, only for agents that passed: which cells, and which channel, by an exact matched-pair test. One error budget covers every claim on the page. Two-sided bounds: clean is NO EVIDENCE *and* its accuracy is at most the upper bound. Then *Verify in browser*: the hash, the Ed25519 signature and the Merkle root over all logged rows; *Tamper with a verdict* fails." |
+| after | **Run audit → Sequential** | "Anytime-valid e-values: the chart may be watched after every slot, and the campaign stops at the first leak, still at family-wise α." |
 | after | **Run audit → Null control** | "Only the clean agent: false-alarm control." |
 | after | **Compliance**, **Schema** | "SDD report, grant review returns zero rows (the channels are owned by a public department: access control looks clean, the leak is not in the grants), exposure trail, lag; the ER diagram is introspected live from the catalog." |
 
@@ -52,6 +70,8 @@ The default campaign is a **live** 2×2×2 factorial of **152 one-second slots**
                                                    │ login: walltest_api (not superuser, not owner, NOINHERIT)
                                                    │ per request: SET LOCAL ROLE high_side | low_side | audit_engine | compliance
    audit engine (Python) ── draws CSPRNG flips, commits, drives scripted agents ──▶  gateway functions gw_*  ─▶ access_event (append-only)
+         │                    each agent connects with its OWN login wt_agent_<name> (v2); the gateway knows who calls
+         └── freeze: evidence Merkle root + one line per hypothesis, signed with Ed25519 (key in ./.keys, not in the DB)
                                                                                     RLS · triggers · exclusion constraint · views v_slot_score / v_verdict
 ```
 The logic lives in SQL (views, functions, triggers, RLS); the API is thin and runs named queries. The engine's agents reach shared channels **only through the gateway**.
@@ -82,9 +102,14 @@ Every divergence or addition is in [`DEVIATIONS.md`](DEVIATIONS.md); the SQL beh
 
 ## Statistics (all in SQL)
 
+v2 (details and proofs in [`docs/METHODS.md`](docs/METHODS.md)): **serial gatekeeping** (per-agent pooled gate at α/n_agents, then Holm over that agent's
+cells and channels), an **exact matched-pair sign test** for channel attribution, **two-sided** Clopper–Pearson bounds, and an optional **SEQUENTIAL**
+mode with beta-binomial mixture e-values and confidence sequences (valid under continuous monitoring and optional stopping, by Ville's inequality).
+Bounds and power are Beta quantiles computed with a log-space incomplete beta and safeguarded Newton. The v1 items below still hold for FIXED mode:
+
 * **Exact one-sided binomial p**, computed in **log space** (a naive `0.5^n · C(n,k)` underflows for large n and PostgreSQL then raises "value out of range"). Matches scipy to ≈ 1e-13 at n = 1,543.
 * **Leakage** `1 − H(a)` bits for a > 0.5. **Clopper–Pearson** one-sided lower bound on accuracy (and the matching bits bound), because a point estimate is not a bound.
-* **Holm–Bonferroni** across the (treatment × LOW agent) family; the verdict uses the **adjusted** p. Raw and adjusted p are both shown.
+* **Multiplicity**: v1 used Holm–Bonferroni across the (treatment × LOW agent) family; v2 uses serial gatekeeping (above), and still reports the v1 flat-Holm p (`p_adj_flat_holm`) for comparison. Raw and adjusted p are both shown.
 * **No peeking.** The verdict is computed once at the planned n; `v_verdict` returns NULL for every inferential column until then, and live charts are labelled descriptive.
 * **NO EVIDENCE is not "proven clean"**: the minimum detectable accuracy (80% power, exact) is shown beside it; when n is too small to reject at all, the UI says "underpowered".
 * **Defaults are derived, not tuned** (`scripts/choose_defaults.py` → `docs/defaults_derivation.json`): α = 0.05 family-wise, 2×2×2 factorial × 3 agents (K = 24), planted accuracy 0.95 (trust 0.9), and the smallest slots-per-cell for which P(every truly-leaky cell is flagged by Holm) ≥ 0.80 and stays there: **19 per cell = 152 slots**
@@ -95,10 +120,34 @@ Every divergence or addition is in [`DEVIATIONS.md`](DEVIATIONS.md); the SQL beh
 ```bash
 docker compose up -d db && python3 -m venv .venv && .venv/bin/pip install -r backend/requirements-dev.txt && .venv/bin/python -m playwright install chromium
 cd backend && ../.venv/bin/python -m pytest -q                 # real PostgreSQL, real roles, nothing mocked
-cd frontend && npm test                                         # browser commitment code vs the shared known-answer vector
-make e2e                                                        # Playwright: drives a LIVE campaign through the UI (~3 min)
-make calibrate                                                  # >= 2,000 null campaigns through the real engine (~8 min)
+cd frontend && npm test                                         # browser commitment + evidence code vs vectors shared with Python
+make e2e                                                        # Playwright: drives a LIVE campaign through the UI (~5 min)
+make calibrate                                                  # v1: >= 2,000 null campaigns through the real engine (~8 min)
+python scripts/calibrate_v2.py                                  # v2: 1,450 campaigns (~25 min) -> docs/calibration_v2_report.md
+python scripts/bench.py --label v2 && python scripts/ab_engine.py && python scripts/index_studies.py   # docs/benchmarks/
 ```
+
+**v2 run (this branch):**
+
+| Suite | Result |
+|---|---|
+| `backend/tests` (pytest, real PostgreSQL, nothing mocked): schema 8 · constraints 22 · append-only 14 · commitment 16 · wall 8 · roles/RLS 24 · **gateway 36** (incl. real agent and API logins attempting impersonation; the HNSW hazard; semantic search ≡ brute force) · stats 103 · **stats v2 80** (e-values vs integration, Ville by simulation, CS coverage, kernels vs 60-digit mpmath) · **verdict 17** (gatekeeping re-derived in Python) · **evidence 21** (Merkle vs Python, proofs, tamper, schema evolution, signatures) · engine 20 · lab 13 · api 16 · llm 6 | **404 passed** |
+| `frontend/tests` (vitest): commitment 5 · evidence 4 (Merkle roots for 0–9 leaves, proofs incl. a promoted step, Ed25519) | **9 passed** |
+| `backend/e2e_tests` (Playwright, a real 152-slot LIVE campaign through the UI): the v1 checks, plus the gate / cells / channel tables (trader-partial attributed to vector memory only), **signature + Merkle root verified in Chromium and a tampered verdict failing**, an inclusion proof, paraphrase search, the Performance and peeking panels, and a **sequential campaign started from the Run page that stops early, signed** | **17 passed** |
+| `scripts/calibrate_v2.py` | **PASS** (table below) |
+| Docker image | built from this branch, run on a fresh database: simulated + LIVE campaigns frozen, all four snapshot checks true, all four agents seen connected under their own logins |
+
+### Calibration v2 (`docs/calibration_v2_report.md`, 1,488 s, 1,450 campaigns through the real engine)
+
+| Scenario | Result |
+|---|---|
+| **No leak, every claim** (600 campaigns × 36 hypotheses) | any false LEAK: **2.0%** at α = 0.05, 0.2% at 0.01, 0% at 0.001 (unadjusted: 25.7%) |
+| **No leak, watched after every slot** (300 campaigns, up to 320 slots, engine stops at the first flag) | e-values **0.7%**; naive fixed-n test after every slot on the same data **13.3%** |
+| **Weak leak** (accuracy 0.60 when exposed, 200 campaigns) | v2 gate detects trader-leaky **49%**, v1 procedure **2.5%**; trader-partial 16% vs 2% |
+| **Strong leak** (accuracy 0.95, 200 campaigns) | both procedures 100%; channel test: trader-partial → vector memory 100%, its other channels ≤ 0.5% |
+| **Slots to detection** (sequential, accuracy 0.675) | median 88 (p10–p90: 32–184); a fixed-n test planned for exactly this effect needs 71: sequential mode buys validity under watching, not speed at a known effect |
+
+**v1 run (kept for reference):**
 | Suite | What it proves | Result |
 |---|---|---|
 | `tests/test_schema.py`, `test_constraints.py` (30) | exactly 20 relations; keys, composite FKs, exclusion constraint, every domain / row / format CHECK, 1:2 and 1:1 cardinalities, SDD two-sharer rule: each negative test shows the real Postgres error | pass |
@@ -134,21 +183,23 @@ The agent sees **only** the note texts the gateway returned (never the flip or v
 
 ```
 docker-compose.yml  Dockerfile  Makefile  scripts/demo.py       one-command demo
-db/migrations/      000–011 numbered SQL migrations (the schema, triggers, RLS, statistics, gateway, engine)
+db/migrations/      000–011 the v1 schema, triggers, RLS, statistics, gateway, engine; 012–016 v2 (statistics, evidence, inference, agent logins, performance)
 backend/walltest/   engine, scripted agents, FastAPI app, queries registry, Rules Lab, run manager, migrate/seed
 backend/tests/      pytest suite (+ e2e_tests Playwright)
 frontend/           Vite + React + TypeScript + Tailwind + D3
 data/prices/        real NSE end-of-day CSV + SOURCE.md (provenance, fetch date, ISIN verification)
-scripts/            fetch_prices, choose_defaults, calibrate, screenshots, reset_db, demo
-docs/               SQL_SHOWCASE.md, COMMITMENT_FORMAT.md, calibration_report.*, defaults_derivation.json, screenshots/
+scripts/            fetch_prices, choose_defaults, calibrate, calibrate_v2, bench, ab_engine, index_studies, screenshots, reset_db, demo
+docs/               METHODS.md (v2), PLAN_V2.md, SQL_SHOWCASE.md, COMMITMENT_FORMAT.md, calibration_report.*, calibration_v2_report.md,
+                    benchmarks/*.json, defaults_derivation.json, screenshots/
 ```
 
 ## Known limitations
 
 * **Scripted agents are instruments.** Leak rates are planted (accuracy = 0.5 + trust/2), not discovered; the audit is validated by recovering them and by *not* flagging the price-only agent. The optional LLM agent (see below) is a stretch, off by default, never tuned.
-* **Roles are per side, not per agent.** Two LOW-side agents share the `low_side` role; the gateway checks the agent's wall side and grants, but a LOW agent could present another LOW agent's id. Per-agent roles would close this.
-* **A PostgreSQL superuser can disable triggers.** Append-only is tamper-*evident* (and `result_hash` exposes edited verdicts), not tamper-proof against the DB owner.
-* **SIMULATED campaigns cannot prove wall-clock commit-before-expose**: timestamps are back-dated by the engine. The hash check is equally strong; LIVE mode is the one that proves ordering.
+* **Agent identity (closed in v2).** v1's roles were per side and an agent id was a parameter; every agent now logs in as itself (D-26).
+* **A PostgreSQL superuser can disable triggers** and rewrite rows. For a frozen campaign that is now *detectable* by anyone holding the published signature (Merkle root over every evidence row, Ed25519 key outside the DB), unless the attacker also holds the engine's signing key: key custody is out of scope.
+* **SIMULATED campaigns cannot prove wall-clock commit-before-expose**: timestamps are back-dated by the engine. The hash check is equally strong; LIVE mode is the one that proves ordering. In SIMULATED mode the gateway clock is a session setting that an agent with raw SQL access could set; it still cannot read flips, and LIVE ignores the setting.
+* **Sequential mode costs power.** At an effect size known in advance, a fixed-n test planned for it needs fewer slots (calibration scenario T). Use SEQUENTIAL when the effect is unknown or the evidence must be watched.
 * **One audit clock per firm** (D-09) because orders carry no campaign id; and one RUNNING campaign per wall.
 * **Dependence in the family.** Agents that follow the same momentum rule make identical decisions in cells where they have no signal, so the 24 tests are positively dependent. Holm needs no independence assumption; the false-alarm calibration is measured under exactly this dependence.
 * **`leakage_bits_lower` is conservative** (Bonferroni level α/K); Holm can reject a cell whose bound is still ≤ 0.5 (shown as 0 bits).

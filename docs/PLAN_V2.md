@@ -37,3 +37,17 @@ no mock numbers, every claim reproducible by a script.
 Every previous test stays green (updated where semantics changed), plus: e-values vs numerical integration, CS coverage by simulation,
 gatekeeping FWER under the full dependence structure, attribution test size, FWER of **naive peeking vs e-values** under continuous
 monitoring, power v1 vs v2, benchmark report, e2e, fresh clone.
+
+## 5. Outcome against this plan (what was built, and where measurement overruled the plan)
+
+| Plan item | Outcome |
+|---|---|
+| I-1 … I-4 | built as planned (migrations 012, 014); validated in `docs/calibration_v2_report.md` |
+| I-5 kernels | went further: incomplete beta + safeguarded Newton replaced the bisections (migration 016) |
+| S-1 per-agent **roles** | became per-agent **logins**: the tests showed a shared login that `SET ROLE`s into agent roles authenticates nothing (D-26) |
+| S-2, S-3 | built; the leaf format was then pinned to explicit column lists after noticing `to_jsonb(row)` would break every signed root at the next `ADD COLUMN` (D-27) |
+| P-1 engine | built, plus what profiling found: top-N price reads (42% of DB time), asynchronous slot-phase commits, a sliding window, a single-pass freeze (D-31) |
+| P-2 **BRIN** | **rejected on measurement**: 30× slower than a B-tree for per-slot windows (`scripts/index_studies.py`, D-30) |
+| P-3 **HNSW** | **rejected on measurement**: recall@10 0.70–0.91; replaced by exact search over distinct vectors (D-29) |
+| P-4, P-5 | built (clock sync; code-split routes) |
+| §4 verification | all of it, plus an interleaved A/B (`scripts/ab_engine.py`), because single best-of-two engine numbers varied by ~15% run to run |
