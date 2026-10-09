@@ -15,6 +15,7 @@ COPY backend/ backend/
 COPY db/ db/
 COPY data/ data/
 COPY docs/defaults_derivation.json docs/defaults_derivation.json
+COPY docs/benchmarks/ docs/benchmarks/
 COPY --from=web /web/dist frontend/dist
 EXPOSE 8000
 # bootstrap = wait for Postgres, apply migrations (as the admin login), seed once; the API itself runs as the non-owner walltest_api role

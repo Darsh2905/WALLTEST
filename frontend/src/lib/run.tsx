@@ -27,6 +27,12 @@ export interface RunState {
   recent: AccessEvt[]
   gateTotals: Record<Gate, { allowed: number; denied: number }>
   openSlot: { index: number; channels: SlotView['channels'] } | null
+  /** SEQUENTIAL inference only: ln E per agent after every slot (anytime-valid, so watching it is legitimate) */
+  evalues: Record<string, { x: number; y: number }[]>
+  evThreshold: number | null
+  checks: { slots_done: number; stop: boolean; rule: string; agents: any[] }[]
+  snapshot: { sha256: string; signature: string; pubkey: string; evidence_root: string } | null
+  stoppedEarly: boolean
   frozen: boolean
   finished: boolean
   error: string | null
@@ -36,7 +42,8 @@ export interface RunState {
 const empty = (): RunState => ({
   connected: false, status: null, campaign: null, slots: {}, order: [], agents: {}, series: {}, slotsDone: 0, pulses: [], recent: [],
   gateTotals: { vector: { allowed: 0, denied: 0 }, notes: { allowed: 0, denied: 0 }, cache: { allowed: 0, denied: 0 } },
-  openSlot: null, frozen: false, finished: false, error: null, cancelled: false,
+  openSlot: null, evalues: {}, evThreshold: null, checks: [], snapshot: null, stoppedEarly: false,
+  frozen: false, finished: false, error: null, cancelled: false,
 })
 
 let pulseId = 0
@@ -46,7 +53,8 @@ function reduce(s: RunState, a: any): RunState {
     case 'hello': return { ...s, status: a.status }
     case 'reset': return { ...empty(), connected: s.connected, status: s.status }
     case 'batch': {
-      let st = { ...s, slots: { ...s.slots }, agents: { ...s.agents }, series: { ...s.series }, gateTotals: { ...s.gateTotals }, pulses: [...s.pulses], recent: [...s.recent] }
+      let st = { ...s, slots: { ...s.slots }, agents: { ...s.agents }, series: { ...s.series }, gateTotals: { ...s.gateTotals }, pulses: [...s.pulses], recent: [...s.recent],
+                 evalues: { ...s.evalues }, checks: [...s.checks] }
       const now = performance.now()
       for (const e of a.events) {
         switch (e.type) {
@@ -88,7 +96,16 @@ function reduce(s: RunState, a: any): RunState {
             }
             st.recent = st.recent.slice(0, 40)
             break
-          case 'verdict_frozen': st.frozen = true; break
+          case 'evalues':
+            st.evThreshold = e.threshold_log_e
+            for (const [k, v] of Object.entries<any>(e.agents)) {
+              const arr = st.evalues[k] ? [...st.evalues[k]] : []
+              arr.push({ x: v.n, y: v.log_e })
+              st.evalues[k] = arr
+            }
+            break
+          case 'sequential_check': st.checks.push(e); break
+          case 'verdict_frozen': st.frozen = true; st.snapshot = e.snapshot ?? null; st.stoppedEarly = !!e.stopped_early; break
           case 'run_finished': st.finished = true; st.openSlot = null; break
           case 'run_cancelled': st.cancelled = true; st.finished = true; break
           case 'run_error': st.error = e.message; st.finished = true; break
@@ -107,7 +124,7 @@ const RunContext = createContext<Ctx | null>(null)
 export const useRun = () => { const c = useContext(RunContext); if (!c) throw new Error('RunProvider missing'); return c }
 
 const EVENT_TYPES = ['campaign_created', 'campaign_started', 'slot_committed', 'slot_open', 'access_events', 'orders', 'slot_revealed',
-                     'progress', 'verdict_frozen', 'run_finished', 'run_cancelled', 'run_error']
+                     'progress', 'evalues', 'sequential_check', 'verdict_frozen', 'run_finished', 'run_cancelled', 'run_error']
 
 export function RunProvider({ children }: { children: React.ReactNode }) {
   const [state, dispatch] = useReducer(reduce, undefined, empty)

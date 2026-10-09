@@ -27,7 +27,7 @@ const K = new Uint32Array([
   0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2])
 
 /** Pure-JS SHA-256, used only when crypto.subtle is unavailable (non-secure contexts such as http://<lan-ip>). */
-function sha256Fallback(bytes: Uint8Array): string {
+export function sha256Fallback(bytes: Uint8Array): string {
   const l = bytes.length, bitLen = l * 8
   const padded = new Uint8Array(((l + 9 + 63) >> 6) << 6)
   padded.set(bytes); padded[l] = 0x80

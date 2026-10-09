@@ -3,6 +3,7 @@ database role and returns the rows together with the exact SQL, for the dashboar
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import sys
 from contextlib import asynccontextmanager
@@ -14,7 +15,8 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from sse_starlette.sse import EventSourceResponse
 
-from . import config, defaults, lab
+from . import config, defaults, lab, signing
+from .embedding import embed, to_pgvector
 from .db import Database
 from .engine import RunConfig
 from .queries import Q, sql_meta
@@ -24,6 +26,7 @@ if sys.platform == "win32":  # psycopg's async API cannot use the default Proact
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 DERIVATION = Path(__file__).resolve().parents[2] / "docs" / "defaults_derivation.json"
+BENCHMARKS = Path(__file__).resolve().parents[2] / "docs" / "benchmarks"
 
 TABLE_GROUPS = {
     "Organisation, walls and access": ["department", "app_user", "agent", "info_wall", "wall_membership", "data_asset", "access_grant"],
@@ -46,6 +49,15 @@ class RunRequest(BaseModel):
     channels: dict[str, str] = Field(default_factory=dict)
     seed: int | None = None
     sim_concurrency: int = 4
+    inference: str = "FIXED"              # FIXED | SEQUENTIAL
+    stop_rule: str = "MAX"                # SEQUENTIAL: MAX | FIRST_LEAK | ALL_SETTLED
+    materiality: float = 0.65
+    min_blocks: int = 2
+
+
+class SearchRequest(BaseModel):
+    text: str = Field(min_length=3, max_length=2000)
+    k: int = Field(10, ge=1, le=100)
 
 
 def create_app(dbname: str | None = None, enable_lab: bool = True) -> FastAPI:
@@ -146,14 +158,72 @@ def create_app(dbname: str | None = None, enable_lab: bool = True) -> FastAPI:
             raise HTTPException(404, "no such campaign")
         c = c[0]
         frozen = await run_q("verdicts_frozen", cid=cid)
-        live = await run_q("verdicts_live", cid=cid) if not frozen else []
+        live = await run_q("verdicts_live", cid=cid) if not frozen and c["status"] in ("RUNNING", "PLANNED") else []
+        rows = frozen or live
         eff = await run_q("channel_effect", cid=cid)
         acc = await run_q("access_summary", cid=cid) if c["started_at"] else []
         nt = await run_q("no_trade", cid=cid)
-        return respond({"campaign": c, "treatments": await run_q("treatments", cid=cid), "frozen": frozen, "live": live,
+        wall = (await run_q("wall_verdict", cid=cid) or [None])[0] if frozen else None
+        v1 = bool(frozen) and not any(r["method"].endswith("_v2") for r in frozen)
+        inference = (c["config"] or {}).get("inference", "FIXED")
+        return respond({"campaign": c, "treatments": await run_q("treatments", cid=cid), "inference": inference, "legacy_v1": v1,
+                        "frozen": [r for r in frozen if r["scope"] == "CELL"], "live": [r for r in live if r["scope"] == "CELL"],
+                        "agents": [r for r in rows if r["scope"] == "AGENT"], "cells": [r for r in rows if r["scope"] == "CELL"],
+                        "channels": [r for r in rows if r["scope"] == "CHANNEL"], "wall": wall, "is_frozen": bool(frozen),
                         "channel_effect": eff, "access_summary": acc, "no_trade": nt,
-                        "doc": "Verdict = Holm-adjusted p <= alpha over the (treatment x LOW agent) family. NO_EVIDENCE is not proof of absence: see min_detectable_acc."},
-                       "verdicts_frozen" if frozen else "verdicts_live", "channel_effect", "access_summary", "no_trade", cid=cid)
+                        "doc": ("Serial gatekeeping: each LOW agent's pooled test at alpha/n_agents is the gate; only if it rejects are that "
+                                "agent's cells and channels tested (Holm within the agent). FWER <= alpha over every claim shown. "
+                                "NO_EVIDENCE is not proof of absence: see the upper bound acc_upper and min_detectable_acc.")},
+                       "verdicts_frozen" if frozen else "verdicts_live", *(["wall_verdict"] if frozen else []),
+                       "channel_effect", "access_summary", "no_trade", cid=cid)
+
+    @app.get("/api/campaigns/{cid}/snapshot")
+    async def snapshot(cid: int):
+        """The signed snapshot, verified here AND (by the UI) again in the browser with Web Crypto."""
+        r = await run_q("snapshot", cid=cid)
+        if not r or r[0]["message"] is None:
+            raise HTTPException(404, "no signed v2 snapshot for this campaign (not frozen, or frozen by v1)")
+        r = r[0]
+        msg = r["message"].encode("utf-8")
+        sha_ok = hashlib.sha256(msg).hexdigest() == (r["snapshot_sha256"] or "").strip()
+        sig_ok = bool(r["signature"] and r["signer_pubkey"]) and signing.verify(r["signer_pubkey"], msg, r["signature"])
+        live_root = await state["db"].fetch("audit_engine", "SELECT root, leaves FROM evidence_root(%s)", (cid,))
+        root_ok = bool(live_root) and live_root[0]["root"] == r["evidence_root"] and live_root[0]["leaves"] == r["evidence_leaves"]
+        return respond({**r, "server_checks": {"sha256_matches": sha_ok, "signature_valid": sig_ok, "evidence_root_recomputed": root_ok,
+                                               "one_snapshot": r["n_distinct_snapshots"] == 1},
+                        "engine_pubkey": signing.signer().public_hex,
+                        "format": "WALLTEST-SNAPSHOT-v2|<campaign>|<evidence_root>|<leaves>\\n<scope|treatment|agent|channel|n|k|p|p_adj|verdict|method>..."},
+                       "snapshot", cid=cid)
+
+    @app.get("/api/campaigns/{cid}/evidence")
+    async def evidence(cid: int):
+        try:
+            leaves = await run_q("evidence_hashes", cid=cid)
+        except Exception as e:  # noqa: BLE001  (WT012: window not closed yet)
+            raise HTTPException(409, f"evidence is defined once the campaign window is closed: {e}")
+        return respond({"leaves": leaves, "format": "leaf = SHA-256(0x00 || kind ':' json), node = SHA-256(0x01 || left || right), odd node promoted"},
+                       "evidence_hashes", cid=cid)
+
+    @app.get("/api/campaigns/{cid}/evidence/{idx}")
+    async def evidence_proof(cid: int, idx: int):
+        leaf = await run_q("evidence_leaf", cid=cid, idx=idx)
+        if not leaf:
+            raise HTTPException(404, "no such leaf")
+        return respond({"leaf": leaf[0], "proof": await run_q("evidence_proof", cid=cid, idx=idx)}, "evidence_leaf", "evidence_proof", cid=cid, idx=idx)
+
+    @app.get("/api/campaigns/{cid}/peeking")
+    async def peeking(cid: int):
+        c = await run_q("campaign_one", cid=cid)
+        if not c:
+            raise HTTPException(404, "no such campaign")
+        c = c[0]
+        n = (await state["db"].fetch("audit_engine", "SELECT count(*)::int AS n FROM canary_slot s JOIN audit_campaign a USING (campaign_id) "
+                                                     "WHERE s.campaign_id=%s AND (a.closed_at IS NULL OR lower(s.slot_period) < a.closed_at)", (cid,)))[0]["n"]
+        step = max(1, c["n_cells"])
+        if n < step:
+            return respond({"rows": [], "alpha": c["alpha"], "n_low": c["n_low"]}, "peeking_trajectory", cid=cid, step=step, n=n)
+        rows = await run_q("peeking_trajectory", cid=cid, step=step, n=n)
+        return respond({"rows": rows, "alpha": c["alpha"], "n_low": c["n_low"], "step": step}, "peeking_trajectory", cid=cid, step=step, n=n)
 
     @app.get("/api/campaigns/{cid}/progress")
     async def progress(cid: int):
@@ -185,7 +255,8 @@ def create_app(dbname: str | None = None, enable_lab: bool = True) -> FastAPI:
         try:
             cfg = RunConfig(alpha=req.alpha, planned_slots=req.planned_slots, design=req.design, clock_mode=req.clock_mode,
                             slot_ms=req.slot_ms, null_control=req.null_control, llm_wall=req.llm, trust=trust, partial_channel=req.partial_channel, channels=req.channels,
-                            seed=req.seed, concurrency=max(1, min(8, req.sim_concurrency)))
+                            seed=req.seed, concurrency=max(1, min(8, req.sim_concurrency)), inference=req.inference, stop_rule=req.stop_rule,
+                            materiality=req.materiality, min_blocks=req.min_blocks)
             cfg.validate()
         except ValueError as e:
             raise HTTPException(422, str(e))
@@ -250,6 +321,22 @@ def create_app(dbname: str | None = None, enable_lab: bool = True) -> FastAPI:
     @app.get("/api/compliance/lag/{cid}")
     async def lag(cid: int):
         return respond({"summary": await run_q("lag_summary", cid=cid), "by_cell": await run_q("lag_by_cell", cid=cid)}, "lag_summary", "lag_by_cell", cid=cid)
+
+    @app.post("/api/compliance/semantic-search")
+    async def semantic_search(req: SearchRequest):
+        vec = to_pgvector(embed(req.text))
+        rows = await run_q("semantic_search", q=vec, k=req.k)
+        return respond({"rows": rows, "query": req.text, "exact": True}, "semantic_search", q="<embedding of the text>", k=req.k)
+
+    @app.get("/api/benchmarks")
+    async def benchmarks():
+        out = {}
+        for f in sorted(BENCHMARKS.glob("*.json")):
+            try:
+                out[f.stem] = json.loads(f.read_text())
+            except ValueError:
+                continue
+        return {"benchmarks": out}
 
     @app.get("/api/compliance/model-comparison")
     async def models():

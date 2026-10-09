@@ -1,17 +1,20 @@
-import { useEffect, useState } from 'react'
+import { Suspense, lazy, useEffect, useState } from 'react'
 import { NavLink, Route, Routes } from 'react-router-dom'
 import { useApi } from './lib/api'
 import { useRun } from './lib/run'
 import { Chip, IconMoon, IconSun } from './components/ui'
 import { cx } from './lib/format'
 import Wall from './pages/Wall'
-import RunAudit from './pages/RunAudit'
-import Verdicts from './pages/Verdicts'
-import Inspector from './pages/Inspector'
-import RulesLab from './pages/RulesLab'
-import Compliance from './pages/Compliance'
-import Power from './pages/Power'
-import Schema from './pages/Schema'
+
+// Code splitting: the first paint needs only the Wall; every other page (and d3-heavy charts) loads on navigation.
+const RunAudit = lazy(() => import('./pages/RunAudit'))
+const Verdicts = lazy(() => import('./pages/Verdicts'))
+const Inspector = lazy(() => import('./pages/Inspector'))
+const RulesLab = lazy(() => import('./pages/RulesLab'))
+const Compliance = lazy(() => import('./pages/Compliance'))
+const Power = lazy(() => import('./pages/Power'))
+const Performance = lazy(() => import('./pages/Performance'))
+const Schema = lazy(() => import('./pages/Schema'))
 
 const NAV = [
   { to: '/', label: 'Wall', hint: 'live barrier view', end: true },
@@ -20,7 +23,8 @@ const NAV = [
   { to: '/inspector', label: 'Commit–reveal', hint: 'verify in the browser' },
   { to: '/lab', label: 'DB Rules Lab', hint: 'try forbidden operations' },
   { to: '/compliance', label: 'Compliance', hint: 'SDD · grants · exposure' },
-  { to: '/power', label: 'Power', hint: 'sample-size table' },
+  { to: '/power', label: 'Power', hint: 'sample size · peeking' },
+  { to: '/performance', label: 'Performance', hint: 'v1 vs v2, measured' },
   { to: '/schema', label: 'Schema', hint: '20 tables · ER diagram' },
 ]
 
@@ -78,6 +82,7 @@ export default function App() {
           <button className="btn btn-sm" onClick={toggle} aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`}>{theme === 'dark' ? <IconSun size={14} /> : <IconMoon size={14} />}{theme === 'dark' ? 'Light' : 'Dark'}</button>
         </header>
         <main className="flex-1 px-6 py-6 min-w-0">
+          <Suspense fallback={<div className="card"><div className="skeleton m-4" style={{ height: 240 }} /></div>}>
           <Routes>
             <Route path="/" element={<Wall />} />
             <Route path="/run" element={<RunAudit />} />
@@ -88,9 +93,11 @@ export default function App() {
             <Route path="/lab" element={<RulesLab />} />
             <Route path="/compliance" element={<Compliance />} />
             <Route path="/power" element={<Power />} />
+            <Route path="/performance" element={<Performance />} />
             <Route path="/schema" element={<Schema />} />
             <Route path="*" element={<div className="card p-8 text-center">Page not found.</div>} />
           </Routes>
+          </Suspense>
         </main>
       </div>
     </div>

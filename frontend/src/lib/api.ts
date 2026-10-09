@@ -55,23 +55,42 @@ export interface Campaign {
   campaign_id: number; wall_name: string; alpha: number; planned_slots: number; status: string; clock_mode: 'LIVE' | 'SIMULATED'
   started_at: string | null; closed_at: string | null; config: any; n_cells: number; n_low?: number; slots_committed?: number; treatments?: Treatment[]
 }
+export type Scope = 'AGENT' | 'CELL' | 'CHANNEL'
+/** One hypothesis. AGENT = the agent's pooled test (the gate); CELL = one treatment cell; CHANNEL = matched-pair sign test. */
 export interface FrozenRow {
-  result_id: number; treatment_id: number; low_agent: string; model_name: string
-  vector_memory_on: boolean; notes_table_on: boolean; cache_on: boolean
-  n_slots: number; n_correct: number; accuracy: number; p_value: number; log10_p: number; p_adjusted: number
-  verdict: 'LEAK' | 'NO_EVIDENCE'; leakage_bits: number; acc_lower: number; leakage_bits_lower: number
-  min_detectable_acc: number | null; family_size: number; alpha: number; clock_mode: string; result_hash: string; hash_ok: boolean
+  result_id: number; scope: Scope; treatment_id: number | null; channel: string | null; low_agent: string; model_name: string
+  vector_memory_on: boolean | null; notes_table_on: boolean | null; cache_on: boolean | null
+  n_slots: number; n_correct: number; accuracy: number | null; p_value: number; log10_p: number | null; log_e: number | null; p_adjusted: number
+  verdict: 'LEAK' | 'NO_EVIDENCE'; gate_passed: boolean | null; method: string
+  leakage_bits: number | null; acc_lower: number; acc_upper: number | null; leakage_bits_lower: number | null; leakage_bits_upper: number | null
+  min_detectable_acc: number | null; family_size: number; n_agents: number | null; alpha: number; clock_mode: string; result_hash: string; hash_ok: boolean
 }
 export interface LiveRow {
-  low_agent: string; vector_memory_on: boolean; notes_table_on: boolean; cache_on: boolean
-  n_slots: number; n_correct: number; n_no_trade: number; accuracy: number; decidable: boolean; planned_cell: number
-  p_raw: number | null; p_adj: number | null; verdict: string | null
+  scope: Scope; treatment_id: number | null; channel: string | null; low_agent: string
+  vector_memory_on: boolean | null; notes_table_on: boolean | null; cache_on: boolean | null
+  n_slots: number; n_correct: number; n_no_trade: number | null; accuracy: number | null; decidable: boolean; planned_cell: number
+  inference: 'FIXED' | 'SEQUENTIAL'; method: string; p_raw: number | null; log_e: number | null; p_adj: number | null; gate_passed: boolean | null
+  verdict: string | null; acc_lower: number | null; acc_upper: number | null; leakage_bits_lower: number | null; leakage_bits_upper: number | null
+  family_size: number; n_agents: number
 }
+export type AnyRow = FrozenRow | LiveRow
+export const pAdj = (r: AnyRow) => ('p_adjusted' in r ? r.p_adjusted : r.p_adj)
+export const pRaw = (r: AnyRow) => ('p_value' in r ? r.p_value : r.p_raw)
 export interface Effect { low_agent: string; channel: string; acc_on: number | null; acc_off: number | null; n_on: number; n_off: number; main_effect: number | null }
+export interface WallVerdict { verdict: 'LEAK' | 'NO_EVIDENCE'; p_adj: number; agents_flagged: number; agents: number }
 export interface VerdictsData {
-  campaign: Campaign; treatments: Treatment[]; frozen: FrozenRow[]; live: LiveRow[]; channel_effect: Effect[]
+  campaign: Campaign; treatments: Treatment[]; inference: 'FIXED' | 'SEQUENTIAL'; legacy_v1: boolean; is_frozen: boolean
+  frozen: FrozenRow[]; live: LiveRow[]; agents: AnyRow[]; cells: AnyRow[]; channels: AnyRow[]; wall: WallVerdict | null
+  channel_effect: Effect[]
   access_summary: { asset_name: string; op: string; outcome: string; n: number }[]; no_trade: { low_agent: string; n_no_trade: number; n_slots: number }[]; doc: string
 }
+export interface Snapshot {
+  message: string; snapshot_sha256: string; signature: string; signer_pubkey: string; evidence_root: string; evidence_leaves: number
+  n_distinct_snapshots: number; engine_pubkey: string; format: string
+  server_checks: { sha256_matches: boolean; signature_valid: boolean; evidence_root_recomputed: boolean; one_snapshot: boolean }
+}
+export interface Leaf { ord: number; kind: string; ref: string; leaf_hash: string }
+export interface ProofStep { level: number; side: 'L' | 'R' | 'P'; sibling: string | null }
 
 export const AGENT_COLOR: Record<string, string> = { 'trader-leaky': 'var(--s-leaky)', 'trader-clean': 'var(--s-clean)', 'trader-partial': 'var(--s-partial)', 'trader-llm': 'var(--ink)' }
 export const AGENT_DASH: Record<string, string> = { 'trader-leaky': '', 'trader-clean': '2 4', 'trader-partial': '7 3', 'trader-llm': '10 3 2 3' }

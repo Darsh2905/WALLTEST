@@ -6,8 +6,11 @@ export interface Series { name: string; label: string; color: string; dash?: str
 
 /** Cumulative-correct chart. Thin 2px lines, direct end labels + legend (identity is never color alone: dash pattern too),
  *  recessive grid, crosshair + tooltip, and a table view. A dashed reference line shows the null expectation n/2. */
-export function LineChart({ series, height = 260, xLabel = 'slots scored', yLabel = 'cumulative correct', reference = true, tableName = 'chart' }: {
+export function LineChart({ series, height = 260, xLabel = 'slots scored', yLabel = 'cumulative correct', reference = true, tableName = 'chart', yDomain, hlines = [], fmtY }: {
   series: Series[]; height?: number; xLabel?: string; yLabel?: string; reference?: boolean; tableName?: string
+  /** fixed y range (default: 0 .. max, for counts) */ yDomain?: [number, number]
+  /** horizontal reference lines, e.g. a decision threshold */ hlines?: { y: number; label: string }[]
+  /** tooltip / table value format (default: count and share of slots) */ fmtY?: (y: number, x: number) => string
 }) {
   const wrap = useRef<HTMLDivElement>(null)
   const [w, setW] = useState(640)
@@ -23,7 +26,8 @@ export function LineChart({ series, height = 260, xLabel = 'slots scored', yLabe
   const maxX = Math.max(10, ...series.map((s) => (s.points.length ? s.points[s.points.length - 1].x : 0)))
   const maxY = Math.max(5, ...series.flatMap((s) => s.points.map((p) => p.y)), maxX * 0.5)
   const x = useMemo(() => d3.scaleLinear([0, maxX], [0, iw]), [maxX, iw])
-  const y = useMemo(() => d3.scaleLinear([0, maxY * 1.05], [ih, 0]).nice(), [maxY, ih])
+  const y = useMemo(() => d3.scaleLinear(yDomain ?? [0, maxY * 1.05], [ih, 0]).nice(), [maxY, ih, yDomain?.[0], yDomain?.[1]])
+  const fmt = fmtY ?? ((v: number, n: number) => `${v} (${((v / n) * 100).toFixed(0)}%)`)
   const line = d3.line<{ x: number; y: number }>().x((d) => x(d.x)).y((d) => y(d.y)).curve(d3.curveMonotoneX)
   const xt = x.ticks(Math.min(8, Math.floor(iw / 70))), yt = y.ticks(5)
   const nearest = (n: number) => Math.max(1, Math.min(maxX, Math.round(n)))
@@ -50,7 +54,7 @@ export function LineChart({ series, height = 260, xLabel = 'slots scored', yLabe
         <div className="overflow-auto border border-line rounded-lg" style={{ height }}>
           <table className="t num"><thead><tr><th>n</th>{series.map((s) => <th key={s.name} className="r">{s.label}</th>)}</tr></thead>
             <tbody>{Array.from({ length: maxX }, (_, i) => i + 1).filter((n) => n % Math.max(1, Math.ceil(maxX / 40)) === 0 || n === maxX).map((n) => (
-              <tr key={n}><td>{n}</td>{series.map((s) => <td key={s.name} className="r">{s.points.find((p) => p.x === n)?.y ?? '—'}</td>)}</tr>))}</tbody></table>
+              <tr key={n}><td>{n}</td>{series.map((s) => { const p = s.points.find((q) => q.x === n); return <td key={s.name} className="r">{p ? fmt(p.y, n) : '—'}</td> })}</tr>))}</tbody></table>
         </div>
       ) : (
         <svg width={w} height={height} role="img" aria-label={`${tableName}: ${yLabel} by ${xLabel}`}
@@ -63,6 +67,8 @@ export function LineChart({ series, height = 260, xLabel = 'slots scored', yLabe
             <text x={iw / 2} y={ih + 31} textAnchor="middle" fontSize="11" fill="var(--ink-3)">{xLabel}</text>
             <text transform={`translate(-34,${ih / 2}) rotate(-90)`} textAnchor="middle" fontSize="11" fill="var(--ink-3)">{yLabel}</text>
             {reference && <line x1={x(0)} y1={y(0)} x2={x(maxX)} y2={y(maxX / 2)} stroke="var(--ink-3)" strokeWidth="1.2" strokeDasharray="3 3" />}
+            {hlines.map((h) => <g key={h.label}><line x1={0} x2={iw} y1={y(h.y)} y2={y(h.y)} stroke="var(--leak)" strokeOpacity="0.7" strokeWidth="1.2" strokeDasharray="5 3" />
+              <text x={4} y={y(h.y) - 5} fontSize="11" fill="var(--leak-ink)">{h.label}</text></g>)}
             {series.map((s) => s.points.length > 0 && <path key={s.name} d={line(s.points) ?? ''} fill="none" stroke={s.color} strokeWidth="2" strokeDasharray={s.dash} strokeLinecap="round" strokeLinejoin="round" />)}
             {labels.map(({ s, y: ly }) => <text key={s.name} x={iw + 8} y={ly} dy="0.32em" fontSize="12" fill="var(--ink)" fontWeight="500">{s.label}</text>)}
             {at != null && (
@@ -77,7 +83,7 @@ export function LineChart({ series, height = 260, xLabel = 'slots scored', yLabe
       {at != null && !table && (
         <div className={cx('absolute pointer-events-none card px-2.5 py-1.5 text-[0.82rem] num z-10')} style={{ left: Math.min(w - 170, m.l + x(at) + 12), top: 38 }}>
           <div className="font-medium mb-0.5">after {at} slots</div>
-          {series.map((s) => { const p = s.points.find((q) => q.x === at); return <div key={s.name} className="flex justify-between gap-4"><span className="text-ink-2">{s.label}</span><span>{p ? `${p.y} (${((p.y / at) * 100).toFixed(0)}%)` : '—'}</span></div> })}
+          {series.map((s) => { const p = s.points.find((q) => q.x === at); return <div key={s.name} className="flex justify-between gap-4"><span className="text-ink-2">{s.label}</span><span>{p ? fmt(p.y, at) : '—'}</span></div> })}
         </div>
       )}
     </div>

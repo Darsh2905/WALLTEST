@@ -435,15 +435,17 @@ $$;
 ------------------------------------------------------------------------------------------------
 -- 4. Compliance semantic search: "which notes in shared memory paraphrase this text?" -- EXACT, over distinct vectors
 ------------------------------------------------------------------------------------------------
--- HNSW was built, measured and REJECTED (docs/benchmarks/, DEVIATIONS D-26). Distance-based recall@10 against brute force:
---   over all 199,200 notes          0.85 for every ef_search up to 1000 (identical-vector clusters become unreachable)
---   over the 23,780 distinct vectors 0.73 / 0.74 / 0.76 / 0.93 at ef_search 40 / 100 / 400 / 1000
--- The embedding is a hashed bag of words (walltest/embedding.py): one query sees only ~530 distinct distance values across
--- 23,780 vectors, and greedy graph search cannot navigate such plateaus. A compliance search that silently drops 7-27% of the
--- closest paraphrases is not acceptable, so the search is exact: distance to every DISTINCT vector (an index-only scan of
+-- HNSW was built, measured and REJECTED (scripts/index_studies.py -> docs/benchmarks/index-studies.json; DEVIATIONS D-26).
+-- Distance-based recall@10 against brute force on the calibration corpus (199,200 notes, 23,780 distinct vectors):
+--   HNSW over all rows        realistic queries 0.84-0.91, stored-vector queries 0.75-0.77 for ef_search 40..1000: a hard
+--                             ceiling (clusters of identical vectors become unreachable once their neighbour lists fill)
+--   HNSW over distinct vectors realistic 0.82-0.91, stored 0.70-0.89: no ceiling, but still short of 1
+-- The embedding is a hashed bag of words (walltest/embedding.py): one query sees ~530 distinct distance values across
+-- 23,780 vectors, and greedy graph search does not navigate such plateaus. A compliance search that silently drops 10-30% of
+-- the closest paraphrases is not acceptable, so the search is exact: distance to every DISTINCT vector (an index-only scan of
 -- agent_note_vector_reps_idx), cut at the p_limit-th distance INCLUDING ties, then expanded to every note carrying those
 -- vectors. The result equals the brute-force search row for row (same distances, same (distance, note_id) order) at
--- ~7 ms instead of ~250 ms.
+-- ~15 ms instead of ~250 ms (docs/benchmarks/v2.json).
 CREATE FUNCTION semantic_search(p_query vector(384), p_limit integer DEFAULT 10)
 RETURNS TABLE (note_id bigint, author text, asset text, isin char(12), body text, created_at timestamptz, similarity double precision)
 LANGUAGE sql STABLE SECURITY DEFINER

@@ -2,6 +2,8 @@ export const fmtInt = (n: number | null | undefined) => (n == null ? '—' : n.t
 export const fmtPct = (x: number | null | undefined, d = 1) => (x == null ? '—' : `${(x * 100).toFixed(d)}%`)
 export const fmtAcc = (x: number | null | undefined) => (x == null ? '—' : x.toFixed(3))
 export const fmtBits = (x: number | null | undefined) => (x == null ? '—' : x < 0.0005 ? '0' : x.toFixed(3))
+/** leakage in bits per decision at accuracy a: 1 − H(a) for a > 0.5 (same formula as SQL leakage_bits) */
+export const bitsOf = (a: number) => (a <= 0.5 ? 0 : a >= 1 ? 1 : 1 + (a * Math.log2(a) + (1 - a) * Math.log2(1 - a)))
 
 /** p-values span many orders of magnitude; log10 (when known) keeps underflowed values honest. */
 export function fmtP(p: number | null | undefined, log10?: number | null): string {

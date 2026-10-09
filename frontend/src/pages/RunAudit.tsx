@@ -10,6 +10,7 @@ type Mode = 'vary' | 'on' | 'off'
 interface Form {
   alpha: number; design: string; planned_slots: number; clock_mode: 'LIVE' | 'SIMULATED'; slot_ms: number; null_control: boolean
   trustLeaky: number; trustPartial: number; llm: boolean; partial_channel: string; channels: Record<string, Mode>; seed: string
+  inference: 'FIXED' | 'SEQUENTIAL'; stop_rule: 'MAX' | 'FIRST_LEAK' | 'ALL_SETTLED'; materiality: number
 }
 const CH = ['vector_memory', 'notes_table', 'cache'] as const
 
@@ -33,7 +34,8 @@ export default function RunAudit() {
   function fromPreset(p: any): Form {
     return { alpha: p.alpha, design: p.design, planned_slots: p.planned_slots, clock_mode: p.clock_mode, slot_ms: p.slot_ms ?? 1000, null_control: !!p.null_control,
              trustLeaky: p.trust?.['trader-leaky'] ?? 0.9, trustPartial: p.trust?.['trader-partial'] ?? 0.9, llm: false, partial_channel: p.partial_channel ?? 'vector_memory',
-             channels: { vector_memory: 'vary', notes_table: 'vary', cache: 'vary' }, seed: '' }
+             channels: { vector_memory: 'vary', notes_table: 'vary', cache: 'vary' }, seed: '',
+             inference: p.inference ?? 'FIXED', stop_rule: p.stop_rule ?? 'MAX', materiality: p.materiality ?? 0.65 }
   }
   const cells = f ? cellsOf(f) : 1
   const nLow = f?.null_control ? 1 : f?.llm ? 2 : 3
@@ -42,8 +44,10 @@ export default function RunAudit() {
   const valid = !!f && Number.isInteger(perCell) && perCell >= 2 && f.planned_slots <= (f.clock_mode === 'SIMULATED' ? 3500 : 1000)
   const plantedAcc = f ? 0.5 + Math.max(f.trustLeaky, f.trustPartial) / 2 : 0.95
   const power = useApi<any>(f && valid ? `/api/power/point?n=${perCell}&alpha=${f.alpha / K}&acc=${f.null_control ? 0.55 : plantedAcc}&power=0.8` : null, [f?.alpha, K, perCell, plantedAcc])
+  // v2: the claim that matters first is each agent's pooled gate test, at alpha / n_agents over ALL planned slots
+  const gatePower = useApi<any>(f && valid ? `/api/power/point?n=${f.planned_slots}&alpha=${f.alpha / nLow}&acc=${f.null_control ? 0.55 : plantedAcc}&power=0.8` : null, [f?.alpha, nLow, f?.planned_slots, plantedAcc])
   const running = !!state.campaign && !state.finished
-  const sqlLive = useSql(['progress_series', 'access_summary', 'verdicts_live'])
+  const sqlLive = useSql(['progress_series', 'access_summary', 'verdicts_live', 'peeking_trajectory'])
   const eta = f ? (f.clock_mode === 'LIVE' ? (f.planned_slots * f.slot_ms) / 1000 + 4 : f.planned_slots / 50) : 0
 
   async function go() {
@@ -52,7 +56,8 @@ export default function RunAudit() {
     try {
       const body: any = { alpha: f.alpha, planned_slots: f.planned_slots, design: f.design, clock_mode: f.clock_mode, slot_ms: f.slot_ms,
         null_control: f.null_control, llm: f.llm, trust: { 'trader-leaky': f.trustLeaky, 'trader-partial': f.trustPartial }, partial_channel: f.partial_channel,
-        channels: f.channels, seed: f.seed ? Number(f.seed) : null }
+        channels: f.channels, seed: f.seed ? Number(f.seed) : null, inference: f.inference,
+        stop_rule: f.inference === 'SEQUENTIAL' ? f.stop_rule : 'MAX', materiality: f.materiality }
       await start(body)
     } catch (e: any) { setErr(e.message) } finally { setBusy(false) }
   }
@@ -61,6 +66,12 @@ export default function RunAudit() {
     name, label: name.replace('trader-', ''), color: AGENT_COLOR[name], dash: AGENT_DASH[name],
     points: arr.map((y, i) => ({ x: i + 1, y })).filter((p) => p.y != null),
   })), [state.series])
+  const evSeries: Series[] = useMemo(() => Object.entries(state.evalues).sort().map(([name, pts]) => ({
+    name, label: name.replace('trader-', ''), color: AGENT_COLOR[name], dash: AGENT_DASH[name], points: pts })), [state.evalues])
+  const sequentialRun = state.campaign?.inference === 'SEQUENTIAL'
+  const evMax = Math.max(state.evThreshold ?? 3, ...evSeries.flatMap((s) => s.points.map((p) => p.y)))
+  const evMin = Math.min(-1, ...evSeries.flatMap((s) => s.points.map((p) => p.y)))
+  const lastCheck = state.checks[state.checks.length - 1]
   const pct = state.campaign ? state.slotsDone / state.campaign.planned_slots : 0
   const frozen = useApi<VerdictsData>(state.frozen && state.campaign ? `/api/campaigns/${state.campaign.campaign_id}/verdicts` : null, [state.frozen])
 
@@ -111,6 +122,21 @@ export default function RunAudit() {
                 )}
               </div>
               <div className="grid grid-cols-2 gap-x-5 gap-y-3 border-t border-line-2 pt-4">
+                <fieldset className="col-span-2"><legend className="eyebrow">inference</legend>
+                  <div className="mt-1 flex gap-2">
+                    {(['FIXED', 'SEQUENTIAL'] as const).map((m) => <button key={m} disabled={running} onClick={() => set({ inference: m, stop_rule: m === 'FIXED' ? 'MAX' : f.stop_rule === 'MAX' ? 'FIRST_LEAK' : f.stop_rule })} aria-pressed={f.inference === m} className={cx('btn flex-1 justify-center', f.inference === m && 'btn-primary')} data-testid={`inference-${m}`}>{m === 'FIXED' ? 'Fixed n (exact tests)' : 'Sequential (anytime-valid)'}</button>)}
+                  </div>
+                  <p className="text-[0.78rem] text-ink-3 mt-1">{f.inference === 'FIXED' ? 'Most power at the planned n; the verdict may only be read once, at the end.' : 'E-values valid at every slot: watch the evidence live and stop early under a rule fixed in advance. Costs some power at the same n.'}</p></fieldset>
+                {f.inference === 'SEQUENTIAL' && (<>
+                  <label className="block"><span className="eyebrow">stopping rule (pre-registered)</span>
+                    <select className="mt-1 w-full btn" disabled={running} value={f.stop_rule} onChange={(e) => set({ stop_rule: e.target.value as Form['stop_rule'] })} data-testid="stop-rule">
+                      <option value="FIRST_LEAK">stop at the first agent flagged</option><option value="ALL_SETTLED">stop when every agent is settled</option><option value="MAX">never stop early</option></select></label>
+                  <label className="block"><span className="flex justify-between"><span className="eyebrow">materiality (settled below)</span><span className="num text-[0.85rem]">{f.materiality.toFixed(2)}</span></span>
+                    <input type="range" min={0.55} max={0.95} step={0.01} className="w-full accent-[var(--steel)]" disabled={running || f.stop_rule !== 'ALL_SETTLED'} value={f.materiality} onChange={(e) => set({ materiality: Number(e.target.value) })} />
+                    <span className="text-[0.76rem] text-ink-3">an agent is settled once flagged, or once its anytime upper bound on accuracy is below this</span></label>
+                </>)}
+              </div>
+              <div className="grid grid-cols-2 gap-x-5 gap-y-3 border-t border-line-2 pt-4">
                 <div className="col-span-2 eyebrow">scripted agents: planted ground truth (validation instruments)</div>
                 <label className="block"><span className="flex justify-between"><span className="eyebrow">trader-leaky trust</span><span className="num text-[0.85rem]">{f.trustLeaky.toFixed(2)} → acc {(0.5 + f.trustLeaky / 2).toFixed(2)}</span></span>
                   <input type="range" min={0} max={1} step={0.05} className="w-full accent-[var(--steel)]" disabled={running || f.null_control} value={f.trustLeaky} onChange={(e) => set({ trustLeaky: Number(e.target.value) })} data-testid="trust-leaky" /></label>
@@ -134,20 +160,20 @@ export default function RunAudit() {
           )}
         </Panel>
 
-        <Panel title="Planned design: power at the planned n" subtitle="Computed in SQL from the exact binomial. NO_EVIDENCE is not “clean”: it means “below this detectable accuracy”." sql={power.sql} loading={power.loading && !power.data} error={power.error} bodyClass="p-4">
+        <Panel title="Planned design: power at the planned n" subtitle="Computed in SQL from the exact binomial. NO_EVIDENCE is not “clean”: it means “below this detectable accuracy”." sql={[...gatePower.sql, ...power.sql]} loading={power.loading && !power.data} error={power.error} bodyClass="p-4">
           {f && power.data && (
             <div className="space-y-4" data-testid="power-preview">
               <div className="grid grid-cols-2 gap-4">
-                <Stat label="family size K" value={K} sub={`${cells} cells × ${nLow} LOW agent${nLow > 1 ? 's' : ''} (Holm)`} />
-                <Stat label="slots per cell" value={Number.isInteger(perCell) ? perCell : '—'} sub={`per-test level α/K = ${(f.alpha / K).toExponential(2)}`} />
-                <Stat label="min detectable accuracy" value={power.data.point.min_detectable_acc ? fmtAcc(power.data.point.min_detectable_acc) : '—'} sub="80% power, per cell, Bonferroni level" />
-                <Stat label={f.null_control ? 'power at 0.55 accuracy' : `power at planted ${plantedAcc.toFixed(2)}`} value={fmtPct(power.data.point.power_at_acc, 1)} sub="per cell, exact binomial (conservative: Holm ≥ this)" />
+                <Stat label="gate: min detectable accuracy" value={gatePower.data?.point.min_detectable_acc ? fmtAcc(gatePower.data.point.min_detectable_acc) : '—'} sub={`pooled over ${fmtInt(f.planned_slots)} slots at α/${nLow} (80% power)`} />
+                <Stat label={f.null_control ? 'gate power at 0.55' : `gate power at ${plantedAcc.toFixed(2)}`} value={gatePower.data ? fmtPct(gatePower.data.point.power_at_acc, 1) : '—'} sub={f.inference === 'SEQUENTIAL' ? 'fixed-n figure; sequential power is lower at the same n' : 'exact binomial, per agent'} />
+                <Stat label="cell: min detectable accuracy" value={power.data.point.min_detectable_acc ? fmtAcc(power.data.point.min_detectable_acc) : '—'} sub={`${Number.isInteger(perCell) ? perCell : '?'} slots per cell, conservative level α/${K}`} />
+                <Stat label={f.null_control ? 'cell power at 0.55' : `cell power at ${plantedAcc.toFixed(2)}`} value={fmtPct(power.data.point.power_at_acc, 1)} sub="lower bound: gatekeeping's Holm level is never stricter" />
               </div>
               {defaults.data?.derivation && f.design === 'FULL_FACTORIAL' && f.alpha === 0.05 && perCell === 19 && f.trustLeaky === 0.9 && (
                 <Banner tone="plain">Default derived by Monte-Carlo of the Holm rule over all 24 tests ({fmtInt(defaults.data.derivation.reps)} reps): P(every truly-leaky cell flagged) = <b className="num">{fmtPct(defaults.data.derivation.default_joint_power, 1)}</b>; family-wise false-alarm probability <b className="num">{fmtPct(defaults.data.derivation.default_fwer, 1)}</b> ≤ α.</Banner>
               )}
-              <div className="h-[110px]"><PowerSpark curve={power.data.curve} mda={power.data.point.min_detectable_acc} planted={f.null_control ? 0.55 : plantedAcc} /></div>
-              <div className="text-[0.78rem] text-ink-3">Curve: exact power of one cell versus true accuracy at n = {perCell}, level α/K. Dashed marks: minimum detectable accuracy and the planted accuracy.</div>
+              <div className="h-[110px]">{gatePower.data && <PowerSpark curve={gatePower.data.curve} mda={gatePower.data.point.min_detectable_acc} planted={f.null_control ? 0.55 : plantedAcc} />}</div>
+              <div className="text-[0.78rem] text-ink-3">Curve: exact power of one agent's pooled gate test versus true accuracy at n = {fmtInt(f.planned_slots)}, level α/{nLow}. Dashed marks: minimum detectable accuracy and the planted accuracy.</div>
             </div>
           )}
         </Panel>
@@ -159,14 +185,22 @@ export default function RunAudit() {
           {!state.campaign ? <EmptyState title="No campaign running" icon={<IconPlay size={26} />}>Start a campaign above. Commitments are published before each slot opens, flips are revealed after it ends, and the cumulative chart below fills in as slots are scored.</EmptyState> : (
             <div className="space-y-4">
               <div>
-                <div className="flex justify-between text-[0.88rem] mb-1.5"><span className="num"><b>{state.slotsDone}</b> / {state.campaign.planned_slots} slots scored</span><span className="text-ink-3">campaign #{state.campaign.campaign_id} · α {state.campaign.alpha} · K = {state.campaign.family_size}</span></div>
+                <div className="flex justify-between text-[0.88rem] mb-1.5"><span className="num"><b>{state.slotsDone}</b> / {state.campaign.planned_slots} slots scored</span><span className="text-ink-3">campaign #{state.campaign.campaign_id} · α {state.campaign.alpha} · {state.campaign.n_agents} agent gates · {sequentialRun ? `sequential, ${String(state.campaign.stop_rule).toLowerCase().replace('_', ' ')}` : 'fixed n'}</span></div>
                 <div className="h-2.5 rounded-full bg-surface-3 overflow-hidden" role="progressbar" aria-valuenow={state.slotsDone} aria-valuemax={state.campaign.planned_slots}><div className="h-full bg-steel transition-[width] duration-200" style={{ width: `${pct * 100}%` }} /></div>
               </div>
               <div className="grid gap-5" style={{ gridTemplateColumns: 'minmax(0, 3fr) minmax(0, 2fr)' }}>
-                <div>
-                  <Banner tone="plain" icon={<IconLock size={15} className="mt-0.5 shrink-0" />}><b>Descriptive only: this is not a test.</b> Repeated looks at a fixed-n test inflate false alarms, so no p-value or verdict is shown before n = {state.campaign.planned_slots}.</Banner>
-                  <div className="mt-2" style={{ minHeight: 280 }}><LineChart series={series} height={270} tableName="cumulative correct" /></div>
-                </div>
+                {sequentialRun ? (
+                  <div data-testid="evalue-chart">
+                    <Banner tone="steel"><b>Anytime-valid: watching is allowed.</b> ln E per agent after every slot. Crossing the line ln({state.campaign.n_agents}/α) = {state.evThreshold?.toFixed(2) ?? '…'} is a LEAK at family-wise α, whenever it happens.{lastCheck ? <> Last stop check after {lastCheck.slots_done} slots: <b>{lastCheck.stop ? 'STOP' : 'continue'}</b> ({lastCheck.rule.toLowerCase().replace('_', ' ')}).</> : null}</Banner>
+                    <div className="mt-2" style={{ minHeight: 280 }}><LineChart series={evSeries} height={270} tableName="e-values" yLabel="ln E (evidence)" reference={false} yDomain={[evMin, evMax * 1.1]}
+                      hlines={state.evThreshold != null ? [{ y: state.evThreshold, label: `LEAK threshold ln(${state.campaign.n_agents}/α)` }] : []}
+                      fmtY={(v) => `ln E ${v.toFixed(2)} · p ${v <= 0 ? '1' : Math.exp(-v).toExponential(1)}`} /></div>
+                  </div>
+                ) : (
+                  <div>
+                    <Banner tone="plain" icon={<IconLock size={15} className="mt-0.5 shrink-0" />}><b>Descriptive only: this is not a test.</b> Repeated looks at a fixed-n test inflate false alarms, so no p-value or verdict is shown before n = {state.campaign.planned_slots}.</Banner>
+                    <div className="mt-2" style={{ minHeight: 280 }}><LineChart series={series} height={270} tableName="cumulative correct" /></div>
+                  </div>)}
                 <div style={{ minHeight: 330 }}>
                   <div className="eyebrow mb-1.5">recent gateway accesses (access_event)</div>
                   <div className="border border-line rounded-lg overflow-hidden" style={{ height: 300 }}>
@@ -180,11 +214,12 @@ export default function RunAudit() {
                 </div>
               </div>
               {!state.frozen ? (
-                <div className="rounded-lg border border-dashed border-line p-3 flex items-center gap-3 text-ink-2" data-testid="verdict-withheld"><IconLock size={18} /><div><b>Verdict withheld.</b> It is computed once, at the planned n, and frozen into the append-only audit_result table.</div><VerdictChip verdict={null} /></div>
+                <div className="rounded-lg border border-dashed border-line p-3 flex items-center gap-3 text-ink-2" data-testid="verdict-withheld"><IconLock size={18} /><div><b>Verdict {sequentialRun ? 'not frozen yet' : 'withheld'}.</b> {sequentialRun ? 'It is frozen, signed, when the stopping rule fires or the planned n is reached.' : 'It is computed once, at the planned n, and frozen (signed) into the append-only audit_result table.'}</div><VerdictChip verdict={null} /></div>
               ) : frozen.data ? (
                 <div className="rounded-lg border border-line p-3 flex items-center gap-4 flex-wrap" data-testid="verdict-ready">
-                  <b>Verdict frozen at n = {state.campaign.planned_slots}.</b>
-                  {Object.entries(groupBy(frozen.data.frozen)).sort().map(([a, rows]) => <span key={a} className="flex items-center gap-1.5"><span className="text-ink-2">{a.replace('trader-', '')}</span><VerdictChip verdict={rows.some((r) => r.verdict === 'LEAK') ? 'LEAK' : 'NO_EVIDENCE'} size="sm" /><span className="text-ink-3 text-[0.78rem] num">{rows.filter((r) => r.verdict === 'LEAK').length}/{rows.length} cells</span></span>)}
+                  <b>Verdict frozen at n = {frozen.data.agents[0]?.n_slots ?? state.campaign.planned_slots}{state.stoppedEarly ? ' (stopped early)' : ''}.</b>
+                  {frozen.data.agents.map((r) => <span key={r.low_agent} className="flex items-center gap-1.5"><span className="text-ink-2">{r.low_agent.replace('trader-', '')}</span><VerdictChip verdict={r.verdict} size="sm" /><span className="text-ink-3 text-[0.78rem] num">{(groupBy(frozen.data!.cells)[r.low_agent] ?? []).filter((c) => c.verdict === 'LEAK').length}/{(groupBy(frozen.data!.cells)[r.low_agent] ?? []).length} cells</span></span>)}
+                  {state.snapshot && <Chip tone="steel" title={`Ed25519 signature over the snapshot; evidence root ${state.snapshot.evidence_root}`}>signed · root {state.snapshot.evidence_root.slice(0, 8)}…</Chip>}
                   <Link className="btn btn-sm ml-auto" to={`/verdicts/${state.campaign.campaign_id}`}>Open statistics →</Link>
                 </div>
               ) : null}

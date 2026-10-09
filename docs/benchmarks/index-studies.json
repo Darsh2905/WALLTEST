@@ -1,0 +1,129 @@
+{
+ "label": "index-studies",
+ "when": "2026-10-08 21:25:31",
+ "rows": {
+  "access_event": 1056800,
+  "agent_note": 398400,
+  "audit_result": 10400,
+  "canary_slot": 115200,
+  "canary_variant": 230400,
+  "sealed_flip": 115200,
+  "trade_order": 1484800
+ },
+ "vector_ann": {
+  "embedded_notes": 199200,
+  "distinct_vectors": 23780,
+  "distinct_distance_values_one_query": 530,
+  "variants": {
+   "all_rows": {
+    "build_s": 27.9,
+    "ef_search": {
+     "40": {
+      "realistic_queries": {
+       "distance_recall_at_10": 0.84,
+       "median_ms": 1.36
+      },
+      "stored_vector_queries": {
+       "distance_recall_at_10": 0.752,
+       "median_ms": 0.81
+      }
+     },
+     "100": {
+      "realistic_queries": {
+       "distance_recall_at_10": 0.858,
+       "median_ms": 1.37
+      },
+      "stored_vector_queries": {
+       "distance_recall_at_10": 0.768,
+       "median_ms": 1.03
+      }
+     },
+     "400": {
+      "realistic_queries": {
+       "distance_recall_at_10": 0.905,
+       "median_ms": 1.88
+      },
+      "stored_vector_queries": {
+       "distance_recall_at_10": 0.768,
+       "median_ms": 1.28
+      }
+     },
+     "1000": {
+      "realistic_queries": {
+       "distance_recall_at_10": 0.905,
+       "median_ms": 2.42
+      },
+      "stored_vector_queries": {
+       "distance_recall_at_10": 0.768,
+       "median_ms": 2.17
+      }
+     }
+    }
+   },
+   "distinct_vectors": {
+    "build_s": 3.5,
+    "ef_search": {
+     "40": {
+      "realistic_queries": {
+       "distance_recall_at_10": 0.818,
+       "median_ms": 0.75
+      },
+      "stored_vector_queries": {
+       "distance_recall_at_10": 0.704,
+       "median_ms": 0.5
+      }
+     },
+     "100": {
+      "realistic_queries": {
+       "distance_recall_at_10": 0.873,
+       "median_ms": 0.81
+      },
+      "stored_vector_queries": {
+       "distance_recall_at_10": 0.72,
+       "median_ms": 0.7
+      }
+     },
+     "400": {
+      "realistic_queries": {
+       "distance_recall_at_10": 0.887,
+       "median_ms": 1.14
+      },
+      "stored_vector_queries": {
+       "distance_recall_at_10": 0.776,
+       "median_ms": 1.08
+      }
+     },
+     "1000": {
+      "realistic_queries": {
+       "distance_recall_at_10": 0.912,
+       "median_ms": 1.69
+      },
+      "stored_vector_queries": {
+       "distance_recall_at_10": 0.888,
+       "median_ms": 2.09
+      }
+     }
+    }
+   }
+  }
+ },
+ "time_index": {
+  "none": {
+   "v_lag (per-slot 2 s windows)": 1.96,
+   "access_summary (campaign window)": 20.34,
+   "exposure_trail (one slot)": 81.61
+  },
+  "brin_32": {
+   "v_lag (per-slot 2 s windows)": 68.15,
+   "access_summary (campaign window)": 1.31,
+   "exposure_trail (one slot)": 0.78
+  },
+  "brin_size": "32 kB",
+  "btree": {
+   "v_lag (per-slot 2 s windows)": 2.3,
+   "access_summary (campaign window)": 0.7,
+   "exposure_trail (one slot)": 0.6
+  },
+  "btree_size": "12 MB"
+ }
+}

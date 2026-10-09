@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { Banner, Chip, IconCheck, PageHeader, Panel } from '../components/ui'
-import { useApi } from '../lib/api'
-import { cx, fmtAcc, fmtInt, fmtPct } from '../lib/format'
+import { Campaign, useApi } from '../lib/api'
+import { LineChart, Series } from '../components/LineChart'
+import { cx, fmtAcc, fmtInt, fmtP, fmtPct } from '../lib/format'
 
 function useDebounced<T>(v: T, ms = 250): T {
   const [x, setX] = useState(v)
@@ -29,6 +30,48 @@ function Curve({ curve, mda, acc, target }: { curve: { accuracy: number; power: 
       {pt && <g pointerEvents="none"><circle cx={x(pt.accuracy)} cy={y(pt.power)} r="4.5" fill="var(--steel)" stroke="var(--surface)" strokeWidth="2" /><text x={x(pt.accuracy)} y={y(pt.power) - 10} fontSize="11.5" textAnchor="middle" fill="var(--ink)" className="num">acc {pt.accuracy.toFixed(3)} → power {pt.power.toFixed(3)}</text></g>}
     </svg>
   )
+}
+
+function Peeking() {
+  const campaigns = useApi<Campaign[]>('/api/campaigns')
+  const closed = (campaigns.data ?? []).filter((c) => c.status === 'CLOSED')
+  const [cid, setCid] = useState<number | null>(null)
+  const [agent, setAgent] = useState<string>('trader-clean')
+  useEffect(() => { if (!cid && closed.length) setCid(closed[0].campaign_id) }, [closed, cid])
+  const d = useApi<{ rows: any[]; alpha: number; n_low: number; step: number }>(cid ? `/api/campaigns/${cid}/peeking` : null, [cid])
+  const calib = useApi<{ benchmarks: Record<string, any> }>('/api/benchmarks')
+  const seqCal = calib.data?.benchmarks['calibration-v2']?.sequential
+  const agents = [...new Set((d.data?.rows ?? []).map((r) => r.low_agent))].sort()
+  const rows = (d.data?.rows ?? []).filter((r) => r.low_agent === agent)
+  const lp = (p: number) => -Math.log10(Math.max(p, 1e-300))
+  const level = d.data ? d.data.alpha / d.data.n_low : 0.05
+  const series: Series[] = [
+    { name: 'fixed', label: 'naive p', color: 'var(--ink-2)', dash: '5 3', points: rows.map((r) => ({ x: r.upto, y: lp(r.p_fixed_n) })) },
+    { name: 'anytime', label: 'anytime p', color: 'var(--steel)', points: rows.map((r) => ({ x: r.upto, y: lp(r.p_anytime) })) },
+  ]
+  const firstNaive = rows.find((r) => r.p_fixed_n <= level), firstAny = rows.find((r) => r.p_anytime <= level)
+  const top = Math.max(lp(level) * 1.4, ...series.flatMap((s) => s.points.map((p) => p.y)))
+  return (
+    <Panel title="Why a fixed-n test forbids peeking, and what a sequential test buys" sql={d.sql} loading={d.loading && !d.data} error={d.error} onRetry={d.reload} bodyClass="p-4 space-y-3"
+      subtitle="The same campaign looked at after every block. The fixed-n p is valid only at ONE pre-planned look: stopping the first time it dips under the line inflates false alarms. The anytime p = 1/E is valid at every look, at a price in power."
+      actions={<div className="flex gap-2">
+        <select className="btn btn-sm" value={cid ?? ''} onChange={(e) => setCid(Number(e.target.value))} aria-label="Campaign">{closed.map((c) => <option key={c.campaign_id} value={c.campaign_id}>campaign #{c.campaign_id}</option>)}</select>
+        <select className="btn btn-sm" value={agent} onChange={(e) => setAgent(e.target.value)} aria-label="Agent">{agents.map((a) => <option key={a}>{a}</option>)}</select></div>}>
+      {rows.length === 0 ? <div className="text-ink-3">No closed campaign with scored slots yet.</div> : (<>
+        <LineChart series={series} height={260} xLabel="slots looked at" yLabel="−log10 p (higher = more evidence)" reference={false} tableName="peeking"
+          yDomain={[0, top]} hlines={[{ y: lp(level), label: `α / ${d.data!.n_low} agents` }]} fmtY={(v) => `p = ${fmtP(10 ** -v)}`} />
+        <div className="text-[0.86rem] text-ink-2" data-testid="peeking-summary">
+          {agent}: the naive p first crosses the line {firstNaive ? <>after <b className="num">{firstNaive.upto}</b> slots</> : <b>never</b>}; the anytime p {firstAny ? <>after <b className="num">{firstAny.upto}</b></> : <b>never</b>}.
+          {' '}A crossing by the naive line on a no-leak agent (trader-clean) is exactly the false alarm that peeking creates.
+        </div>
+      </>)}
+      {seqCal && (
+        <div className="border-t border-line-2 pt-3">
+          <div className="eyebrow mb-1.5">measured on the real engine (scripts/calibrate.py --v2): false-alarm rate under continuous monitoring</div>
+          <table className="t num" data-testid="peeking-calibration"><thead><tr><th>procedure</th><th className="r">campaigns</th><th className="r">any false LEAK</th><th className="r">95% CI</th><th className="r">nominal α</th></tr></thead><tbody>
+            {seqCal.rows.map((r: any) => <tr key={r.procedure}><td>{r.procedure}</td><td className="r">{fmtInt(r.n)}</td><td className={cx('r font-semibold', r.rate > r.alpha && 'text-leak')}>{fmtPct(r.rate, 2)}</td><td className="r text-ink-3">{fmtPct(r.ci[0], 2)}–{fmtPct(r.ci[1], 2)}</td><td className="r">{r.alpha}</td></tr>)}
+          </tbody></table></div>)}
+    </Panel>)
 }
 
 export default function Power() {
@@ -86,6 +129,8 @@ export default function Power() {
             <div>{point.data ? <Curve curve={point.data.curve} mda={point.data.point.min_detectable_acc} acc={pacc} target={target} /> : <div className="skeleton" style={{ height: 300 }} />}</div>
           </div>
         </Panel>
+
+        <Peeking />
       </div>
     </div>
   )

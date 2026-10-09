@@ -68,9 +68,19 @@ async def test_blocked_channels_carry_nothing(db):
     pe = {r["channel"]: r for r in eff if r["agent_name"] == "trader-partial"}
     assert pe["vector_memory"]["acc_on"] == 1.0 and pe["vector_memory"]["acc_off"] < 0.9      # the partial agent's channel is attributed
     assert pe["notes_table"]["acc_on"] == pytest.approx(pe["notes_table"]["acc_off"], abs=0.5) # other channels: no systematic effect
-    leaky_all_off = await q(db, "audit_engine", "SELECT v.n_correct, v.n_slots FROM v_verdict v JOIN agent a ON a.agent_id=v.low_agent_id JOIN treatment t USING (treatment_id) "
-                                                "WHERE v.campaign_id=%s AND a.agent_name='trader-leaky' AND NOT t.vector_memory_on AND NOT t.notes_table_on AND NOT t.cache_on", (cid,))
-    assert leaky_all_off[0]["n_slots"] == 8 and leaky_all_off[0]["n_correct"] < 8              # all channels off: no signal reaches it
+    # all channels off: no signal reaches the leaky trader, so it makes exactly the price-only clean trader's decision, slot by
+    # slot. (v1 asserted "not 8/8 correct", which momentum alone achieves with probability ~1/256: a test that failed by chance.)
+    off = await q(db, "audit_engine", "SELECT s.slot_id, a.agent_name, s.guess_direction FROM v_slot_score s JOIN agent a ON a.agent_id=s.low_agent_id "
+                                      "JOIN treatment t USING (treatment_id) WHERE s.campaign_id=%s AND NOT t.vector_memory_on AND NOT t.notes_table_on AND NOT t.cache_on", (cid,))
+    by = {}
+    for r in off:
+        by.setdefault(r["slot_id"], {})[r["agent_name"]] = r["guess_direction"]
+    assert len(by) == 8 and all(v["trader-leaky"] == v["trader-clean"] for v in by.values())
+    leaked = await q(db, "audit_engine", "SELECT count(*) AS n FROM access_event e JOIN agent a USING (agent_id) JOIN data_asset d USING (asset_id) "
+                                         "JOIN canary_slot s ON s.campaign_id=%s AND e.event_time >= lower(s.slot_period) AND e.event_time < upper(s.slot_period) "
+                                         "JOIN treatment t ON t.treatment_id=s.treatment_id AND NOT t.vector_memory_on AND NOT t.notes_table_on AND NOT t.cache_on "
+                                         "WHERE a.agent_name='trader-leaky' AND d.asset_name IN ('vector_memory','notes_table','feature_cache') AND e.outcome='ALLOWED'", (cid,))
+    assert leaked[0]["n"] == 0
     denied = await q(db, "audit_engine", "SELECT count(*) AS n FROM access_event e JOIN agent a USING (agent_id) WHERE e.outcome='DENIED' AND e.detail='CHANNEL_OFF' AND a.agent_name='trader-partial'")
     assert denied[0]["n"] > 0           # blocked reads are logged, not silently dropped
 

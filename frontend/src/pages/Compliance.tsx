@@ -1,12 +1,47 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Banner, Chip, EmptyState, IconCheck, PageHeader, Panel } from '../components/ui'
-import { Campaign, useApi } from '../lib/api'
+import { Campaign, SqlMeta, api, useApi } from '../lib/api'
 import { cx, fmtClock, fmtTime } from '../lib/format'
 
 const TABS = [
   { id: 'sdd', label: 'SDD report' }, { id: 'grants', label: 'Grant review' }, { id: 'exposure', label: 'Exposure trail' },
-  { id: 'lag', label: 'Lag analysis' }, { id: 'models', label: 'Model comparison' },
+  { id: 'search', label: 'Paraphrase search' }, { id: 'lag', label: 'Lag analysis' }, { id: 'models', label: 'Model comparison' },
 ]
+
+function Search() {
+  const [text, setText] = useState('Company will report quarterly profit well above consensus estimates')
+  const [k, setK] = useState(10)
+  const [res, setRes] = useState<{ rows: any[]; sql: SqlMeta[]; ms: number } | null>(null)
+  const [err, setErr] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  async function run() {
+    setBusy(true); setErr(null)
+    const t = performance.now()
+    try {
+      const r = await api<{ data: { rows: any[] }; sql: SqlMeta[] }>('/api/compliance/semantic-search', { method: 'POST', body: JSON.stringify({ text, k }) })
+      setRes({ rows: r.data.rows, sql: r.sql, ms: performance.now() - t })
+    } catch (e: any) { setErr(e.message) } finally { setBusy(false) }
+  }
+  return (
+    <Panel title="Which notes in shared memory paraphrase this text?" sql={res?.sql}
+      subtitle="Embeds the text with the same model the agents use and finds the nearest notes in vector memory. EXACT: identical to scanning every note, computed over distinct vectors only (most notes repeat), so it stays fast at 200k notes."
+      bodyClass="p-4 space-y-3">
+      <div className="flex gap-2 items-start">
+        <textarea className="btn flex-1 min-h-[64px] text-left" value={text} onChange={(e) => setText(e.target.value)} aria-label="Text to search for" data-testid="search-text" />
+        <div className="flex flex-col gap-2">
+          <select className="btn btn-sm" value={k} onChange={(e) => setK(Number(e.target.value))} aria-label="Results">{[5, 10, 25, 50].map((x) => <option key={x} value={x}>top {x}</option>)}</select>
+          <button className="btn btn-primary btn-sm" onClick={run} disabled={busy || text.trim().length < 3} data-testid="search-run">Search</button>
+        </div>
+      </div>
+      {err && <Banner tone="leak">{err}</Banner>}
+      {res && (res.rows.length === 0 ? <EmptyState title="No embedded notes yet">Run an audit: the research agent writes notes into vector memory.</EmptyState> : (
+        <div className="overflow-auto" style={{ maxHeight: 460 }}>
+          <div className="text-[0.8rem] text-ink-3 mb-1.5 num">{res.rows.length} notes · {res.ms.toFixed(0)} ms round trip</div>
+          <table className="t" data-testid="search-results"><thead><tr><th className="r">similarity</th><th>author</th><th>channel</th><th>security</th><th>note</th><th>written</th></tr></thead><tbody>
+            {res.rows.map((r) => <tr key={r.note_id}><td className="r num font-medium">{r.similarity.toFixed(3)}</td><td>{r.author}</td><td className="mono text-[0.8rem]">{r.asset}</td><td className="mono text-[0.8rem]">{r.isin}</td><td className="text-ink-2">{r.body}</td><td className="num text-ink-3 text-[0.78rem]">{fmtTime(r.created_at)}</td></tr>)}
+          </tbody></table></div>))}
+    </Panel>)
+}
 
 function Sdd() {
   const [u, setU] = useState<string>('')
@@ -83,12 +118,12 @@ export default function Compliance() {
   const [tab, setTab] = useState('sdd')
   return (
     <div>
-      <PageHeader title="Compliance" lead="SDD-style access history, grant review, exposure trail for a canary, lag analysis and model comparison, all answered from the same tables." />
+      <PageHeader title="Compliance" lead="SDD-style access history, grant review, exposure trail for a canary, paraphrase search over shared memory, lag analysis and model comparison, all answered from the same tables." />
       <div role="tablist" className="flex gap-1 mb-4 border-b border-line">
         {TABS.map((t) => <button key={t.id} role="tab" aria-selected={tab === t.id} onClick={() => setTab(t.id)} data-testid={`tab-${t.id}`}
           className={cx('px-3.5 py-2 text-[0.93rem] font-medium -mb-px border-b-2', tab === t.id ? 'border-ink text-ink' : 'border-transparent text-ink-3 hover:text-ink')}>{t.label}</button>)}
       </div>
-      {tab === 'sdd' && <Sdd />}{tab === 'grants' && <Grants />}{tab === 'exposure' && <Exposure />}{tab === 'lag' && <Lag />}{tab === 'models' && <Models />}
+      {tab === 'sdd' && <Sdd />}{tab === 'grants' && <Grants />}{tab === 'exposure' && <Exposure />}{tab === 'search' && <Search />}{tab === 'lag' && <Lag />}{tab === 'models' && <Models />}
     </div>
   )
 }

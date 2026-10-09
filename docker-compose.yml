@@ -4,6 +4,9 @@
 services:
   db:
     image: pgvector/pgvector:pg16
+    # parallel index builds, VACUUM and parallel queries use /dev/shm; Docker's 64 MB default made them fail
+    # ("could not resize shared memory segment ... No space left on device")
+    shm_size: 256mb
     environment:
       POSTGRES_USER: walltest_admin
       POSTGRES_PASSWORD: ${WALLTEST_ADMIN_PASSWORD:-walltest_admin_pw}
@@ -35,6 +38,11 @@ services:
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
     ports:
       - "${WALLTEST_PORT:-8000}:8000"
+    # the engine's Ed25519 signing key and the agents' master key live OUTSIDE the database. Bind-mounted (not a named volume)
+    # because agent login roles are cluster-wide: every process that provisions them (this container, the test suite, the
+    # calibration scripts) must derive the same passwords. Created on first start; keep it private (.gitignore'd).
+    volumes:
+      - ./.keys:/app/.keys
 
 volumes:
   walltest_pgdata:

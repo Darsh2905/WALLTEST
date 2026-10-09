@@ -1,0 +1,407 @@
+{
+ "label": "calibration-v2",
+ "when": "2026-10-08 21:48:08",
+ "workers": 4,
+ "db": "walltest_calibration_v2",
+ "null_all_claims": {
+  "n_campaigns": 600,
+  "hypotheses_per_campaign": 36,
+  "fwer_all_claims_alpha_0.05": {
+   "x": 12,
+   "n": 600,
+   "rate": 0.02,
+   "ci95": [
+    0.010375953483207249,
+    0.0346751596860797
+   ],
+   "alpha": 0.05,
+   "ok": 1.0
+  },
+  "fwer_agent_gates_alpha_0.05": {
+   "x": 12,
+   "n": 600,
+   "rate": 0.02,
+   "ci95": [
+    0.010375953483207249,
+    0.0346751596860797
+   ],
+   "alpha": 0.05,
+   "ok": 1.0
+  },
+  "fwer_all_claims_alpha_0.01": {
+   "x": 1,
+   "n": 600,
+   "rate": 0.0016666666666666668,
+   "ci95": [
+    4.2195456387170086e-05,
+    0.009250772279374587
+   ],
+   "alpha": 0.01,
+   "ok": 1.0
+  },
+  "fwer_agent_gates_alpha_0.01": {
+   "x": 1,
+   "n": 600,
+   "rate": 0.0016666666666666668,
+   "ci95": [
+    4.2195456387170086e-05,
+    0.009250772279374587
+   ],
+   "alpha": 0.01,
+   "ok": 1.0
+  },
+  "fwer_all_claims_alpha_0.001": {
+   "x": 0,
+   "n": 600,
+   "rate": 0.0,
+   "ci95": [
+    0.0,
+    0.006129271330669258
+   ],
+   "alpha": 0.001,
+   "ok": true
+  },
+  "fwer_agent_gates_alpha_0.001": {
+   "x": 0,
+   "n": 600,
+   "rate": 0.0,
+   "ci95": [
+    0.0,
+    0.006129271330669258
+   ],
+   "alpha": 0.001,
+   "ok": true
+  },
+  "stored_verdicts_match_p_adjusted_at_0.05": true,
+  "unadjusted_any_cell_p_below_0.05": {
+   "x": 154,
+   "n": 600,
+   "rate": 0.25666666666666665,
+   "ci95": [
+    0.22215343638837204,
+    0.29359491816364136
+   ]
+  }
+ },
+ "sequential": {
+  "n_campaigns": 300,
+  "max_slots": 320,
+  "looks": "after every slot",
+  "stopped_early": 2,
+  "rows": [
+   {
+    "procedure": "anytime e-values, engine stops at first flag (v2)",
+    "x": 2,
+    "n": 300,
+    "rate": 0.006666666666666667,
+    "ci95": [
+     0.0008083864127997911,
+     0.02387349757217365
+    ],
+    "alpha": 0.05,
+    "ok": 1.0,
+    "ci": [
+     0.0008083864127997911,
+     0.02387349757217365
+    ]
+   },
+   {
+    "procedure": "naive: exact fixed-n test after every slot",
+    "x": 40,
+    "n": 300,
+    "rate": 0.13333333333333333,
+    "ci95": [
+     0.0969922149443212,
+     0.1771087625678681
+    ],
+    "alpha": 0.05,
+    "ok": 0.0,
+    "ci": [
+     0.0969922149443212,
+     0.1771087625678681
+    ]
+   }
+  ],
+  "naive_flags_every_campaign_the_e_values_flag": true
+ },
+ "power": {
+  "strong (trust 0.9: accuracy 0.95 when exposed)": {
+   "n_campaigns": 200,
+   "trader-clean": {
+    "v2_agent_gate": {
+     "x": 1,
+     "n": 200,
+     "rate": 0.005,
+     "ci95": [
+      0.00012658102786701825,
+      0.02754189845720562
+     ]
+    },
+    "v1_any_cell_flat_holm": {
+     "x": 5,
+     "n": 200,
+     "rate": 0.025,
+     "ci95": [
+      0.008166166190842513,
+      0.05737435112684586
+     ]
+    }
+   },
+   "trader-leaky": {
+    "v2_agent_gate": {
+     "x": 200,
+     "n": 200,
+     "rate": 1.0,
+     "ci95": [
+      0.9817246596448638,
+      1.0
+     ]
+    },
+    "v1_any_cell_flat_holm": {
+     "x": 200,
+     "n": 200,
+     "rate": 1.0,
+     "ci95": [
+      0.9817246596448638,
+      1.0
+     ]
+    }
+   },
+   "trader-partial": {
+    "v2_agent_gate": {
+     "x": 200,
+     "n": 200,
+     "rate": 1.0,
+     "ci95": [
+      0.9817246596448638,
+      1.0
+     ]
+    },
+    "v1_any_cell_flat_holm": {
+     "x": 200,
+     "n": 200,
+     "rate": 1.0,
+     "ci95": [
+      0.9817246596448638,
+      1.0
+     ]
+    }
+   },
+   "channel_flags": {
+    "trader-partial:vector_memory": {
+     "x": 200,
+     "n": 200,
+     "rate": 1.0,
+     "ci95": [
+      0.9817246596448638,
+      1.0
+     ]
+    },
+    "trader-partial:notes_table": {
+     "x": 0,
+     "n": 200,
+     "rate": 0.0,
+     "ci95": [
+      0.0,
+      0.01827534035513624
+     ]
+    },
+    "trader-partial:cache": {
+     "x": 1,
+     "n": 200,
+     "rate": 0.005,
+     "ci95": [
+      0.00012658102786701825,
+      0.02754189845720562
+     ]
+    },
+    "trader-leaky:vector_memory": {
+     "x": 55,
+     "n": 200,
+     "rate": 0.275,
+     "ci95": [
+      0.21437741524309537,
+      0.34242541862375053
+     ]
+    },
+    "trader-leaky:notes_table": {
+     "x": 60,
+     "n": 200,
+     "rate": 0.3,
+     "ci95": [
+      0.23738964407544724,
+      0.3686498754590013
+     ]
+    },
+    "trader-leaky:cache": {
+     "x": 53,
+     "n": 200,
+     "rate": 0.265,
+     "ci95": [
+      0.20523909138592317,
+      0.33187009220861813
+     ]
+    }
+   },
+   "false_flags_on_trader_clean": {
+    "x": 1,
+    "n": 200,
+    "rate": 0.005,
+    "ci95": [
+     0.00012658102786701825,
+     0.02754189845720562
+    ]
+   }
+  },
+  "weak (trust 0.2: accuracy 0.60 when exposed)": {
+   "n_campaigns": 200,
+   "trader-clean": {
+    "v2_agent_gate": {
+     "x": 3,
+     "n": 200,
+     "rate": 0.015,
+     "ci95": [
+      0.003104107621553509,
+      0.0432082819177126
+     ]
+    },
+    "v1_any_cell_flat_holm": {
+     "x": 1,
+     "n": 200,
+     "rate": 0.005,
+     "ci95": [
+      0.00012658102786701825,
+      0.02754189845720562
+     ]
+    }
+   },
+   "trader-leaky": {
+    "v2_agent_gate": {
+     "x": 98,
+     "n": 200,
+     "rate": 0.49,
+     "ci95": [
+      0.41882251520548525,
+      0.5614782774378335
+     ]
+    },
+    "v1_any_cell_flat_holm": {
+     "x": 5,
+     "n": 200,
+     "rate": 0.025,
+     "ci95": [
+      0.008166166190842513,
+      0.05737435112684586
+     ]
+    }
+   },
+   "trader-partial": {
+    "v2_agent_gate": {
+     "x": 32,
+     "n": 200,
+     "rate": 0.16,
+     "ci95": [
+      0.11208749764580182,
+      0.2182990153513408
+     ]
+    },
+    "v1_any_cell_flat_holm": {
+     "x": 4,
+     "n": 200,
+     "rate": 0.02,
+     "ci95": [
+      0.00547556587955645,
+      0.0504136090898963
+     ]
+    }
+   },
+   "channel_flags": {
+    "trader-partial:vector_memory": {
+     "x": 1,
+     "n": 200,
+     "rate": 0.005,
+     "ci95": [
+      0.00012658102786701825,
+      0.02754189845720562
+     ]
+    },
+    "trader-partial:notes_table": {
+     "x": 0,
+     "n": 200,
+     "rate": 0.0,
+     "ci95": [
+      0.0,
+      0.01827534035513624
+     ]
+    },
+    "trader-partial:cache": {
+     "x": 0,
+     "n": 200,
+     "rate": 0.0,
+     "ci95": [
+      0.0,
+      0.01827534035513624
+     ]
+    },
+    "trader-leaky:vector_memory": {
+     "x": 0,
+     "n": 200,
+     "rate": 0.0,
+     "ci95": [
+      0.0,
+      0.01827534035513624
+     ]
+    },
+    "trader-leaky:notes_table": {
+     "x": 0,
+     "n": 200,
+     "rate": 0.0,
+     "ci95": [
+      0.0,
+      0.01827534035513624
+     ]
+    },
+    "trader-leaky:cache": {
+     "x": 1,
+     "n": 200,
+     "rate": 0.005,
+     "ci95": [
+      0.00012658102786701825,
+      0.02754189845720562
+     ]
+    }
+   },
+   "false_flags_on_trader_clean": {
+    "x": 3,
+    "n": 200,
+    "rate": 0.015,
+    "ci95": [
+     0.003104107621553509,
+     0.0432082819177126
+    ]
+   }
+  }
+ },
+ "time_to_detection": {
+  "n_campaigns": 150,
+  "leaky_accuracy_pooled": 0.675,
+  "slots_used": {
+   "median": 88.0,
+   "p10": 32.0,
+   "p90": 184.0,
+   "max_planned": 400
+  },
+  "detected_trader_leaky": {
+   "x": 142,
+   "n": 150,
+   "rate": 0.9466666666666667,
+   "ci95": [
+    0.8976181039766762,
+    0.97669618980353
+   ]
+  },
+  "fixed_n_for_80pct_power_same_level": 71
+ },
+ "elapsed_s": 1488,
+ "pass": true
+}

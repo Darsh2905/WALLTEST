@@ -59,30 +59,79 @@ q("treatments", "audit_engine", """
 SELECT treatment_id, vector_memory_on, notes_table_on, cache_on FROM treatment WHERE campaign_id = %(cid)s ORDER BY treatment_id""")
 
 q("verdicts_frozen", "audit_engine", """
-SELECT r.result_id, r.treatment_id, a.agent_name AS low_agent, a.model_name,
+SELECT r.result_id, r.scope, r.treatment_id, r.channel, a.agent_name AS low_agent, a.model_name,
        t.vector_memory_on, t.notes_table_on, t.cache_on,
-       r.n_slots, r.n_correct, r.n_correct::float8 / r.n_slots AS accuracy,
-       r.p_value, binom_log10_p(r.n_slots, r.n_correct) AS log10_p, r.p_adjusted, r.verdict,
-       r.leakage_bits, r.acc_lower, r.leakage_bits_lower, r.min_detectable_acc,
-       r.family_size, r.alpha::float8 AS alpha, r.clock_mode, r.result_hash, i.hash_ok, r.computed_at
+       r.n_slots, r.n_correct, CASE WHEN r.n_slots > 0 THEN r.n_correct::float8 / r.n_slots END AS accuracy,
+       r.p_value, CASE WHEN r.method LIKE 'FIXED%%' THEN binom_log10_p(r.n_slots, r.n_correct) END AS log10_p, r.log_e,
+       r.p_adjusted, r.verdict, r.gate_passed, r.method,
+       r.leakage_bits, r.acc_lower, r.acc_upper, r.leakage_bits_lower, r.leakage_bits_upper, r.min_detectable_acc,
+       r.family_size, r.n_agents, r.alpha::float8 AS alpha, r.clock_mode, r.result_hash, i.hash_ok, r.computed_at
 FROM audit_result r
-JOIN agent a     ON a.agent_id = r.low_agent_id
-JOIN treatment t ON t.treatment_id = r.treatment_id
+JOIN agent a          ON a.agent_id = r.low_agent_id
+LEFT JOIN treatment t ON t.treatment_id = r.treatment_id
 JOIN v_result_integrity i ON i.result_id = r.result_id
 WHERE r.campaign_id = %(cid)s
-ORDER BY a.agent_name, t.vector_memory_on DESC, t.notes_table_on DESC, t.cache_on DESC""",
-  "Frozen, append-only verdicts (audit_result). p_value is the raw exact binomial p; the verdict uses the Holm-adjusted p_adjusted.")
+ORDER BY a.agent_name, CASE r.scope WHEN 'AGENT' THEN 0 WHEN 'CELL' THEN 1 ELSE 2 END,
+         t.vector_memory_on DESC, t.notes_table_on DESC, t.cache_on DESC, r.channel""",
+  "Frozen, append-only results: one row per hypothesis. AGENT = the agent's pooled test (the gate, at alpha/n_agents); "
+  "CELL / CHANNEL = which conditions / which channel, tested only if the gate passed (Holm within the agent). "
+  "Every row's verdict uses its globally adjusted p (p_adjusted): FWER <= alpha over ALL rows.")
 
 q("verdicts_live", "audit_engine", """
-SELECT a.agent_name AS low_agent, t.vector_memory_on, t.notes_table_on, t.cache_on,
-       v.n_slots, v.n_correct, v.n_no_trade, v.accuracy, v.decidable, v.planned_cell,
-       v.p_raw, v.p_adj, v.verdict
-FROM v_verdict v
-JOIN agent a     ON a.agent_id = v.low_agent_id
-JOIN treatment t ON t.treatment_id = v.treatment_id
-WHERE v.campaign_id = %(cid)s
-ORDER BY a.agent_name, t.vector_memory_on DESC, t.notes_table_on DESC, t.cache_on DESC""",
-  "v_verdict: every inferential column is NULL until each cell has reached its planned n (no peeking).")
+SELECT i.scope, i.treatment_id, i.channel, a.agent_name AS low_agent, i.vector_memory_on, i.notes_table_on, i.cache_on,
+       i.n_slots, i.n_correct, i.n_no_trade, i.accuracy, i.decidable, i.planned_cell, i.inference, i.method,
+       i.p_raw, i.log_e, i.p_adj, i.gate_passed, i.verdict, i.acc_lower, i.acc_upper, i.leakage_bits_lower, i.leakage_bits_upper,
+       i.family_size, i.n_agents
+FROM campaign_inference(%(cid)s) i
+JOIN agent a ON a.agent_id = i.low_agent_id
+ORDER BY a.agent_name, CASE i.scope WHEN 'AGENT' THEN 0 WHEN 'CELL' THEN 1 ELSE 2 END,
+         i.vector_memory_on DESC, i.notes_table_on DESC, i.cache_on DESC, i.channel""",
+  "FIXED inference: every inferential column is NULL until each cell has reached its planned n (no peeking). "
+  "SEQUENTIAL inference: anytime-valid e-values, so the verdict MAY be read after every slot.")
+
+q("wall_verdict", "audit_engine", """
+SELECT CASE WHEN bool_or(r.verdict = 'LEAK') THEN 'LEAK' ELSE 'NO_EVIDENCE' END AS verdict, min(r.p_adjusted) AS p_adj,
+       count(*) FILTER (WHERE r.verdict = 'LEAK')::int AS agents_flagged, count(*)::int AS agents
+FROM audit_result r WHERE r.campaign_id = %(cid)s AND r.scope = 'AGENT'
+HAVING count(*) > 0""",
+  "Is the wall breached? Yes iff some LOW agent's pooled test rejects (Bonferroni over agents, so p_adj is the wall's p).")
+
+q("snapshot", "audit_engine", """
+SELECT snapshot_message_frozen(%(cid)s) AS message, max(r.snapshot_sha256) AS snapshot_sha256, max(r.signature) AS signature,
+       max(r.signer_pubkey) AS signer_pubkey, max(r.evidence_root) AS evidence_root, max(r.evidence_leaves) AS evidence_leaves,
+       count(DISTINCT r.snapshot_sha256)::int AS n_distinct_snapshots
+FROM audit_result r WHERE r.campaign_id = %(cid)s AND r.method LIKE '%%_v2'
+HAVING count(*) > 0""",
+  "The signed snapshot, rebuilt from the frozen rows. Anyone can check SHA-256(message) = snapshot_sha256, verify the Ed25519 "
+  "signature with signer_pubkey, and recompute evidence_root from the evidence rows.")
+
+q("evidence_hashes", "audit_engine", """
+SELECT ord::int, kind, ref, encode(leaf_hash, 'hex') AS leaf_hash FROM evidence_leaves(%(cid)s) ORDER BY ord""",
+  "Every evidence row as a Merkle leaf: SHA-256(0x00 || kind:json). The browser rebuilds the tree and compares the root.")
+
+q("evidence_leaf", "audit_engine", """
+SELECT ord::int, kind, ref, payload, encode(leaf_hash, 'hex') AS leaf_hash FROM evidence_leaves(%(cid)s) WHERE ord = %(idx)s""")
+
+q("evidence_proof", "audit_engine", """
+SELECT level, side, sibling FROM evidence_proof(%(cid)s, %(idx)s) ORDER BY level""",
+  "Inclusion proof: sibling hashes from the leaf to the root (L = sibling on the left, R = on the right, P = promoted).")
+
+q("semantic_search", "compliance", """
+SELECT note_id, author, asset, isin, body, iso_us(created_at) AS created_at, similarity
+FROM semantic_search(%(q)s::vector, %(k)s)""",
+  "Exact nearest notes to the text, over DISTINCT vectors (index-only scan of the representatives) and expanded to every "
+  "note carrying a found vector. Equal to brute force row for row; HNSW was measured and rejected (docs/benchmarks).")
+
+q("peeking_trajectory", "audit_engine", """
+SELECT u.upto, a.agent_name AS low_agent, i.n_slots, i.n_correct,
+       binom_upper_p(i.n_slots, i.n_correct) AS p_fixed_n, p_from_log_e(log_evalue_mix(i.n_slots, i.n_correct)) AS p_anytime
+FROM generate_series(%(step)s::int, %(n)s::int, %(step)s::int) AS u(upto)
+CROSS JOIN LATERAL campaign_inference(%(cid)s::int, u.upto, true) i
+JOIN agent a ON a.agent_id = i.low_agent_id
+WHERE i.scope = 'AGENT'
+ORDER BY u.upto, a.agent_name""",
+  "The same data looked at after every block. p_fixed_n is the exact test's p, valid ONLY at a single pre-planned n: "
+  "stopping the first time it dips below alpha inflates false alarms. p_anytime = 1/E is valid at every look.")
 
 q("no_trade", "audit_engine", """
 SELECT a.agent_name AS low_agent, sum(p.n_no_trade)::int AS n_no_trade, sum(p.n_slots)::int AS n_slots

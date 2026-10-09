@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { Banner, Chip, EmptyState, IconCheck, IconLock, IconX, PageHeader, Panel } from '../components/ui'
 import { Campaign, useApi } from '../lib/api'
+import { EvidencePanel } from '../components/EvidencePanel'
 import { commitmentOf, flipOneBitHex, parseIsoMicros, preimage, sha256Hex } from '../lib/commitment'
 import { cx, fmtClock, shortHash } from '../lib/format'
 
@@ -133,7 +134,7 @@ export default function Inspector() {
 
   return (
     <div>
-      <PageHeader title="Commit–reveal inspector" lead="For every slot the browser recomputes SHA-256 from the revealed flip, salt and the microsecond start time, and compares it with the commitment the database published before the slot opened."
+      <PageHeader title="Commit–reveal inspector" lead="For every slot the browser recomputes SHA-256 from the revealed flip, salt and the microsecond start time, and compares it with the commitment the database published before the slot opened. For a frozen campaign it also checks the signed verdict and the Merkle root over every logged row."
         right={<select className="btn" value={id ?? ''} onChange={(e) => nav(`/inspector/${e.target.value}`)} aria-label="Campaign">{(campaigns.data ?? []).map((c) => <option key={c.campaign_id} value={c.campaign_id}>#{c.campaign_id} · {c.planned_slots} slots · {c.clock_mode === 'SIMULATED' ? 'simulated' : 'live'}</option>)}</select>} />
       {camp?.clock_mode === 'SIMULATED' && <div className="mb-3"><Banner tone="steel"><b>Simulated clock.</b> This campaign's timestamps were back-dated by the engine. The hash check below is exactly as strong; what a simulated clock cannot prove is that the commitment preceded the slot on the real wall clock.</Banner></div>}
       {!id && !campaigns.loading ? <div className="card"><EmptyState title="No campaign yet">Run an audit first; each slot's commitment appears here as soon as it is published.</EmptyState></div> : (
@@ -158,6 +159,7 @@ export default function Inspector() {
             </div>
           </Panel>
           {sel ? <Detail sid={sel} /> : <Panel title="Slot"><EmptyState title="Select a slot" /></Panel>}
+          {id && camp?.status === 'CLOSED' && <div className="col-span-full"><EvidencePanel cid={id} /></div>}
         </div>)}
     </div>
   )

@@ -175,3 +175,81 @@ def test_custom_channel_design(client):
     wait_idle(client)
     t = client.get(f"/api/campaigns/{r.json()['campaign_id']}").json()["data"]["treatments"]
     assert sorted((x["vector_memory_on"], x["notes_table_on"], x["cache_on"]) for x in t) == [(False, False, True), (True, False, True)]
+
+
+# ----- v2 -----------------------------------------------------------------------------------------------------------------------
+def _root(hashes):
+    import hashlib
+    lvl = [bytes.fromhex(h) for h in hashes]
+    if not lvl:
+        return hashlib.sha256(b"").hexdigest()
+    while len(lvl) > 1:
+        lvl = [hashlib.sha256(b"\x01" + lvl[i] + lvl[i + 1]).digest() if i + 1 < len(lvl) else lvl[i] for i in range(0, len(lvl), 2)]
+    return lvl[0].hex()
+
+
+def test_v2_hierarchical_verdicts_signed_snapshot_and_evidence_verify_from_the_api_alone(client):
+    import hashlib
+    from walltest import signing
+    r = client.post("/api/runs", json={"alpha": 0.05, "planned_slots": 32, "design": "FULL_FACTORIAL", "clock_mode": "SIMULATED",
+                                       "trust": {"trader-leaky": 1.0, "trader-partial": 1.0}})
+    assert r.status_code == 200
+    cid = r.json()["campaign_id"]
+    wait_idle(client)
+    v = client.get(f"/api/campaigns/{cid}/verdicts").json()
+    d = v["data"]
+    assert d["is_frozen"] and not d["legacy_v1"] and d["inference"] == "FIXED"
+    assert len(d["agents"]) == 3 and len(d["cells"]) == 24 and len(d["channels"]) == 9 and d["frozen"] == d["cells"]
+    ag = {x["low_agent"]: x for x in d["agents"]}
+    assert ag["trader-leaky"]["verdict"] == "LEAK" and ag["trader-leaky"]["gate_passed"] and ag["trader-clean"]["verdict"] == "NO_EVIDENCE"
+    assert d["wall"]["verdict"] == "LEAK" and d["wall"]["agents_flagged"] >= 1 and d["wall"]["agents"] == 3
+    assert all(x["hash_ok"] for x in d["agents"] + d["cells"] + d["channels"])
+    assert {s["name"] for s in v["sql"]} >= {"verdicts_frozen", "wall_verdict"}
+    # signed snapshot: the server's checks, then the same checks done here from the response alone
+    snap = client.get(f"/api/campaigns/{cid}/snapshot").json()["data"]
+    assert all(snap["server_checks"].values()), snap["server_checks"]
+    msg = snap["message"].encode()
+    assert hashlib.sha256(msg).hexdigest() == snap["snapshot_sha256"] and signing.verify(snap["signer_pubkey"], msg, snap["signature"])
+    assert snap["signer_pubkey"] == snap["engine_pubkey"] and snap["message"].startswith(f"WALLTEST-SNAPSHOT-v2|{cid}|{snap['evidence_root']}|")
+    # evidence: rebuild the Merkle root from the leaf hashes, and verify inclusion proofs of leaves of every kind
+    leaves = client.get(f"/api/campaigns/{cid}/evidence").json()["data"]["leaves"]
+    assert len(leaves) == snap["evidence_leaves"] and _root([x["leaf_hash"] for x in leaves]) == snap["evidence_root"]
+    for kind in ("canary_slot", "canary_variant", "sealed_flip", "agent_note", "access_event", "trade_order"):
+        idx = next(x["ord"] for x in leaves if x["kind"] == kind)
+        p = client.get(f"/api/campaigns/{cid}/evidence/{idx}").json()["data"]
+        h = hashlib.sha256(b"\x00" + p["leaf"]["payload"].encode()).digest()
+        assert h.hex() == p["leaf"]["leaf_hash"]
+        for step in p["proof"]:
+            if step["side"] == "L":
+                h = hashlib.sha256(b"\x01" + bytes.fromhex(step["sibling"]) + h).digest()
+            elif step["side"] == "R":
+                h = hashlib.sha256(b"\x01" + h + bytes.fromhex(step["sibling"])).digest()
+        assert h.hex() == snap["evidence_root"], kind
+    assert client.get(f"/api/campaigns/{cid}/evidence/{len(leaves)}").status_code == 404
+    # the peeking demonstration: anytime p-values are never below the fixed-n p for the same data
+    pk = client.get(f"/api/campaigns/{cid}/peeking").json()["data"]
+    assert len(pk["rows"]) == 3 * 4 and all(x["p_anytime"] >= x["p_fixed_n"] - 1e-15 for x in pk["rows"])
+
+
+def test_v2_sequential_run_stops_early_through_the_api(client):
+    bad = client.post("/api/runs", json={"planned_slots": 16, "design": "ALL_ON", "clock_mode": "SIMULATED", "stop_rule": "FIRST_LEAK"})
+    assert bad.status_code == 422 and "SEQUENTIAL" in bad.json()["detail"]
+    r = client.post("/api/runs", json={"alpha": 0.05, "planned_slots": 160, "design": "FULL_FACTORIAL", "clock_mode": "SIMULATED",
+                                       "inference": "SEQUENTIAL", "stop_rule": "FIRST_LEAK", "trust": {"trader-leaky": 1.0, "trader-partial": 1.0}})
+    assert r.status_code == 200
+    cid = r.json()["campaign_id"]
+    wait_idle(client)
+    d = client.get(f"/api/campaigns/{cid}/verdicts").json()["data"]
+    assert d["inference"] == "SEQUENTIAL" and all(x["method"] == "ANYTIME_EVALUE_GATEKEEPING_v2" for x in d["agents"])
+    assert d["agents"][0]["n_slots"] < 160 and d["agents"][0]["log_e"] is not None
+
+
+def test_v2_semantic_search_and_benchmarks(client):
+    r = client.post("/api/compliance/semantic-search", json={"text": "profit well above consensus", "k": 5})
+    assert r.status_code == 200
+    d = r.json()["data"]
+    assert d["exact"] and len(d["rows"]) <= 5 and all({"note_id", "author", "asset", "similarity"} <= set(x) for x in d["rows"])
+    assert [x["similarity"] for x in d["rows"]] == sorted((x["similarity"] for x in d["rows"]), reverse=True)
+    assert client.post("/api/compliance/semantic-search", json={"text": "x", "k": 5}).status_code == 422
+    b = client.get("/api/benchmarks").json()["benchmarks"]
+    assert "v1-baseline" in b and "v2" in b and "ab-engine-v1-v2" in b

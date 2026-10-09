@@ -1,0 +1,66 @@
+{
+ "payload0": "trade_order:{\"order_id\": 0}",
+ "leaf0": "a83aeef5d28c957194c0fe532c999bc2cbf921e295df399883c2e220086c6950",
+ "leaves": [
+  "a83aeef5d28c957194c0fe532c999bc2cbf921e295df399883c2e220086c6950",
+  "1eaa4901e7a88fb671bacd5e6ec2efce55b02af74968a8eb09a0446e14a01f72",
+  "9896b5492bf7852ade4e19dbdb8b1fa395b50c13ecaabe710a55557eac55bd8d",
+  "e47c5a7c6b751317c1297c00019958fd0b146612537fc51fd73da87cdbe502d9",
+  "246655bf42310c67ba9d01d855d2084a6037e74ebeb6c91f34cca2aad31c92fe",
+  "494aae8add7518d23280d14036d1e3751f8628b86e5624e73ce78e943222f6b4",
+  "140155756a1168281bb8d484e1f40bbdcb9f9ebb42c3ec36eb72cc6f15a5bf61",
+  "17c39951ebb82b92ca30a2ebec0d93f4914d041ef2953fb53fe689a36099df73",
+  "596f8fbb3db3ec9f163687a1db5461429448f9e0cc354a9e3562b17686eb3aaa"
+ ],
+ "roots": {
+  "0": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "1": "a83aeef5d28c957194c0fe532c999bc2cbf921e295df399883c2e220086c6950",
+  "2": "294f857e5d51ed6faba9a76256ec0351dc8c8ccc13d9b39e9b01b0f7d3fb0713",
+  "3": "223992e3a8663d77d8696f80718e4febd4361007d311ff9e3838197837a22e6a",
+  "4": "646abd3dd3594384c31b3b47c20bc47fd18ad8c3053c2bc424aeddba79e507e9",
+  "5": "ead8d29cce82b5f0b455d5e7c6a1c13c3092beccca684e603f688cdfab84933a",
+  "6": "731f2cc2a9b8ab8ccb6cd48697384fefdb46fa4c93d1fdbefd059c871265c39b",
+  "7": "10c3f3f59141789ef0f8684d8b02fa4ac095d9ba8574da05d922eb814e7bb79d",
+  "8": "603eff1cd49f6d5ffc7e107b418dd08d0a3ce31873f34f022cd6d2076569fd8b",
+  "9": "f5045f215c3ad0dea1e7bde52467183dd6a61325a041ab9f2db1416cc22b16c6"
+ },
+ "proof_7_4": [
+  {
+   "level": 0,
+   "side": "R",
+   "sibling": "494aae8add7518d23280d14036d1e3751f8628b86e5624e73ce78e943222f6b4"
+  },
+  {
+   "level": 1,
+   "side": "R",
+   "sibling": "140155756a1168281bb8d484e1f40bbdcb9f9ebb42c3ec36eb72cc6f15a5bf61"
+  },
+  {
+   "level": 2,
+   "side": "L",
+   "sibling": "646abd3dd3594384c31b3b47c20bc47fd18ad8c3053c2bc424aeddba79e507e9"
+  }
+ ],
+ "ed25519": {
+  "pub": "2270227c54799ac15d3cd446a1214f9ddbb4d868341d5622a89c52864b5163fc",
+  "msg": "WALLTEST-SNAPSHOT-v2|1|10c3f3f59141789ef0f8684d8b02fa4ac095d9ba8574da05d922eb814e7bb79d|7\nAGENT|-|2|-|16|16|1.52587890625e-05|4.57763671875e-05|LEAK|FIXED_EXACT_GATEKEEPING_v2",
+  "sig": "ba135f170f7d4924a3438bd59a917458ad257e50fd4add45815fbe068997028d5ec9785bf22b7ca449dcceebcd0c2c6f1317654134f8a39ca9bdfd3b80925109"
+ },
+ "proof_7_6": [
+  {
+   "level": 0,
+   "side": "P",
+   "sibling": null
+  },
+  {
+   "level": 1,
+   "side": "L",
+   "sibling": "47703fa418051dd50209cf0877938689446605e0f5f8d5bc4f6463e38468166a"
+  },
+  {
+   "level": 2,
+   "side": "L",
+   "sibling": "646abd3dd3594384c31b3b47c20bc47fd18ad8c3053c2bc424aeddba79e507e9"
+  }
+ ]
+}

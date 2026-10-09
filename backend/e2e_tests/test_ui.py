@@ -11,7 +11,7 @@ from conftest import SHOTS
 
 pytestmark = pytest.mark.e2e
 PAGES = [("01-wall", "/"), ("02-run", "/run"), ("03-verdicts", "/verdicts"), ("04-inspector", "/inspector"), ("05-lab", "/lab"),
-         ("06-compliance", "/compliance"), ("07-power", "/power"), ("08-schema", "/schema")]
+         ("06-compliance", "/compliance"), ("07-power", "/power"), ("08-schema", "/schema"), ("09-performance", "/performance")]
 
 
 def api(base, path):
@@ -64,8 +64,11 @@ def test_rules_lab_shows_real_postgres_errors(page):
 
 
 def test_every_panel_has_a_show_sql_drawer(page, live):
-    """Needs data on every page (empty states have no panels), hence after the live campaign."""
-    for _, path in PAGES:
+    """Needs data on every page (empty states have no panels), hence after the live campaign. The Performance page is the one
+    exception by design: it shows benchmark FILES written by scripts/ (bench.py, ab_engine.py, index_studies.py), not queries."""
+    for name, path in PAGES:
+        if name == "09-performance":
+            continue
         goto(page, path)
         btn = page.locator("[data-testid=show-sql]").first
         expect(btn).to_be_visible()
@@ -155,15 +158,45 @@ def test_headline_verdicts_leaky_leak_clean_no_evidence(live):
 def test_verdict_statistics_page(live):
     page, _ = live
     goto(page, "/verdicts")
-    expect(page.locator("[data-testid=campaign-meta]")).to_contain_text("planned slots 152")
-    rows = page.locator("[data-testid=verdict-table] tbody tr")
-    assert rows.count() == 24
-    clean = page.locator("tr[data-agent='trader-clean']")
-    assert clean.count() == 8 and clean.locator("[data-verdict='LEAK']").count() == 0 and page.locator("tr[data-agent='trader-clean'][data-verdict='NO_EVIDENCE']").count() == 8
-    leaky_leak = page.locator("tr[data-agent='trader-leaky'][data-verdict='LEAK']").count()
+    expect(page.locator("[data-testid=campaign-meta]")).to_contain_text("slots 152")
+    expect(page.locator("[data-testid=campaign-meta]")).to_contain_text("row hashes verified")
+    expect(page.locator("[data-testid=wall-verdict]")).to_have_attribute("data-verdict", "LEAK")
+    # step 1: the gate, one pooled test per agent
+    agents = page.locator("[data-testid=agent-table] tbody tr")
+    assert agents.count() == 3
+    assert page.locator("[data-testid=agent-table] tr[data-agent='trader-leaky']").get_attribute("data-verdict") == "LEAK"
+    assert page.locator("[data-testid=agent-table] tr[data-agent='trader-partial']").get_attribute("data-verdict") == "LEAK"
+    assert page.locator("[data-testid=agent-table] tr[data-agent='trader-clean']").get_attribute("data-verdict") == "NO_EVIDENCE"
+    # step 2: cells (24 = 8 cells x 3 agents)
+    cells = page.locator("[data-testid=verdict-table]")
+    assert cells.locator("tbody tr").count() == 24
+    assert cells.locator("tr[data-agent='trader-clean'][data-verdict='NO_EVIDENCE']").count() == 8
+    leaky_leak = cells.locator("tr[data-agent='trader-leaky'][data-verdict='LEAK']").count()
     assert leaky_leak >= 5, f"leaky flagged in only {leaky_leak}/7 channel-on cells"
-    assert page.locator("tr[data-agent='trader-leaky'][data-verdict='NO_EVIDENCE']").count() >= 1       # all-off cell
-    expect(page.locator("[data-testid=campaign-meta]")).to_contain_text("snapshot hashes verified")
+    assert cells.locator("tr[data-agent='trader-leaky'][data-verdict='NO_EVIDENCE']").count() >= 1       # all-off cell
+    # step 2: channels, by the matched-pair sign test: trader-partial is attributed to vector memory and nothing else
+    ch = page.locator("[data-testid=channel-table]")
+    assert ch.locator("tbody tr").count() == 9
+    assert ch.locator("tr[data-channel='trader-partial:vector_memory']").get_attribute("data-verdict") == "LEAK"
+    for c in ("notes_table", "cache"):
+        assert ch.locator(f"tr[data-channel='trader-partial:{c}']").get_attribute("data-verdict") == "NO_EVIDENCE"
+    assert ch.locator("tr[data-agent='trader-clean'][data-verdict='LEAK']").count() == 0
+
+
+def test_signed_evidence_verifies_in_the_browser_and_a_tampered_verdict_fails(live):
+    page, _ = live
+    goto(page, "/verdicts")
+    page.click("[data-testid=verify-evidence]")
+    checks = page.locator("[data-testid=evidence-checks]")
+    for k in ("sha", "sig", "root"):
+        expect(checks.locator(f"[data-check={k}]")).to_have_attribute("data-state", "ok", timeout=30000)
+    page.click("[data-testid=tamper-evidence]")
+    expect(checks.locator("[data-check=sha]")).to_have_attribute("data-state", "fail", timeout=15000)
+    expect(checks.locator("[data-check=sig]")).to_have_attribute("data-state", "fail", timeout=15000)
+    expect(checks.locator("[data-check=root]")).to_have_attribute("data-state", "ok", timeout=30000)     # the rows themselves are untouched
+    page.click("[data-testid=prove-leaf]")
+    expect(page.locator("[data-testid=proof-result]")).to_have_attribute("data-ok", "1", timeout=15000)
+    assert page.errors == []
 
 
 def test_partial_agents_leak_is_attributed_to_its_channel(live):
@@ -219,6 +252,22 @@ def test_compliance_reports_for_the_live_campaign(live):
     expect(page.get_by_text("median (ms)").first).to_be_visible(timeout=10000)
 
 
+def test_paraphrase_search_performance_and_peeking_pages(live):
+    page, _ = live
+    goto(page, "/compliance")
+    page.click("[data-testid=tab-search]")
+    page.click("[data-testid=search-run]")
+    expect(page.locator("[data-testid=search-results] tbody tr").first).to_be_visible(timeout=15000)
+    assert page.locator("[data-testid=search-results] tbody tr").count() == 10
+    goto(page, "/performance")
+    expect(page.locator("[data-testid=ab-table] tbody tr")).to_have_count(4)
+    expect(page.locator("[data-testid=hnsw-table] tbody tr").first).to_be_visible()
+    expect(page.locator("[data-testid=brin-table] tbody tr")).to_have_count(3)
+    goto(page, "/power")
+    expect(page.locator("[data-testid=peeking-summary]")).to_be_visible(timeout=20000)
+    assert page.errors == []
+
+
 def test_screenshots_every_page_both_viewports(live, browser, base_url):
     """Runs BEFORE the null-control test so the screenshots show the headline factorial campaign. Written to docs/screenshots/ (looked at, and fixed, during development). Also asserts no console errors and no horizontal overflow."""
     for vp, (w, h) in {"1440x900": (1440, 900), "1366x768": (1366, 768)}.items():
@@ -253,4 +302,22 @@ def test_null_control_button_demonstrates_false_alarm_control(live):
     page.wait_for_timeout(2500)
     expect(page.locator("[data-testid=verdict-card-trader-clean]")).to_have_attribute("data-verdict", "NO_EVIDENCE", timeout=15000)
     assert page.locator("[data-testid^=verdict-card-]").count() == 1
+    assert page.errors == []
+
+
+def test_sequential_campaign_through_the_run_page(live):
+    """The v2 controls: simulated clock, anytime-valid inference, stop at the first leak. The e-value chart is shown while it
+    runs (watching is valid), and the frozen verdict says it stopped early."""
+    page, _ = live
+    goto(page, "/run")
+    page.click("[data-testid=clock-SIMULATED]")
+    page.select_option("[data-testid=design]", "FULL_FACTORIAL")
+    page.fill("[data-testid=slots]", "400")
+    page.click("[data-testid=inference-SEQUENTIAL]")
+    page.select_option("[data-testid=stop-rule]", "FIRST_LEAK")
+    page.click("[data-testid=start]")
+    expect(page.locator("[data-testid=evalue-chart]")).to_be_visible(timeout=20000)
+    expect(page.locator("[data-testid=verdict-ready]")).to_be_visible(timeout=120000)
+    expect(page.locator("[data-testid=verdict-ready]")).to_contain_text("stopped early")
+    expect(page.locator("[data-testid=verdict-ready]")).to_contain_text("signed")
     assert page.errors == []

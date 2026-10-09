@@ -6,3 +6,4 @@ frontend/dist
 docs/screenshots
 *.log
 .pytest_cache
+.keys
